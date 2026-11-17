@@ -9,6 +9,8 @@ window.__ModuleLoader__.load({
     const MIN_WIDTH = 200
     const MAX_WIDTH = 720
     const STORE_KEY = 'dsh.panel-dock.v1'
+    const SPLITTER_WIDTH = 5
+    const MIN_CONVERSATION = 420
     const core = {
       STORE_KEY,
       DEFAULT_WIDTH,
@@ -51,6 +53,13 @@ window.__ModuleLoader__.load({
         return JSON.stringify({ width: core.clampWidth(layout && layout.width), collapsed: Object.assign({}, (layout && layout.collapsed) || {}) })
       },
       isCollapsed(layout, id) { return Boolean(layout && layout.collapsed && layout.collapsed[id] === true) },
+      effectiveStripWidth(stageWidth, preferred, splitter) {
+        const stage = Number(stageWidth)
+        if (!Number.isFinite(stage) || stage <= 0) return core.clampWidth(preferred)
+        const affordable = Math.floor(stage - MIN_CONVERSATION - splitter)
+        const capped = Math.min(core.clampWidth(preferred), affordable)
+        return Math.max(MIN_WIDTH, capped)
+      },
       toggleCollapsed(layout, id) {
         const next = { width: core.clampWidth(layout && layout.width), collapsed: Object.assign({}, (layout && layout.collapsed) || {}) }
         next.collapsed[id] = next.collapsed[id] !== true
@@ -97,6 +106,7 @@ window.__ModuleLoader__.load({
         height: definition.height === undefined ? 'fill' : definition.height,
         component: definition.component,
         collapsible: definition.collapsible !== false,
+        side: definition.side === 'left' || definition.side === 'auto' ? definition.side : 'right',
       })
       emit()
       return () => { registry.delete(definition.id); emit() }
@@ -159,7 +169,7 @@ window.__ModuleLoader__.load({
     function Stage(props) {
       const { SessionProvider, renderSlot, useSessions } = props
       const list = useSessions((state) => state)
-      const registered = useRegistry()
+      const registered = useRegistry().filter((panel) => panel.side === 'right')
       const sessionId = React.useMemo(() => {
         if (!list || !Array.isArray(list.ids) || list.ids.length === 0) return null
         const retained = list.ids.find((id) => ((list.byId[id] || {}).retainedBy || {}).mainView > 0)
@@ -168,6 +178,27 @@ window.__ModuleLoader__.load({
       const [reference, setReference] = React.useState(null)
       const [failure, setFailure] = React.useState(null)
       const [layout, setLayout] = React.useState(readLayout)
+      const [stageWidth, setStageWidth] = React.useState(0)
+      const stageRef = React.useRef(null)
+      React.useEffect(() => {
+        const node = stageRef.current
+        if (!node || typeof ResizeObserver !== 'function') return undefined
+        const observer = new ResizeObserver((entries) => {
+          const width = entries && entries[0] && entries[0].contentRect ? entries[0].contentRect.width : 0
+          setStageWidth(Math.round(width))
+        })
+        observer.observe(node)
+        const measure = () => {
+          const current = stageRef.current
+          if (!current) return
+          const width = Math.round(current.getBoundingClientRect().width)
+          setStageWidth((previous) => (previous === width ? previous : width))
+        }
+        measure()
+        window.addEventListener('resize', measure)
+        const timer = window.setInterval(measure, 1000)
+        return () => { observer.disconnect(); window.removeEventListener('resize', measure); window.clearInterval(timer) }
+      }, [])
       React.useEffect(() => {
         const sync = () => setLayout(readLayout())
         listeners.add(sync)
@@ -193,7 +224,9 @@ window.__ModuleLoader__.load({
           window.__panelDockDebug = {
             panels: registered.map((p) => p.id),
             width: layout.width,
+            stripWidth,
             collapsed: Object.assign({}, layout.collapsed),
+            stageWidth,
             sessionId,
             hasReference: Boolean(reference),
             hasSessionProvider: Boolean(SessionProvider),
@@ -207,7 +240,8 @@ window.__ModuleLoader__.load({
         dragRef.current = { startX: event.clientX, startWidth: layout.width }
         const move = (e) => {
           if (!dragRef.current) return
-          const next = core.clampWidth(dragRef.current.startWidth + (dragRef.current.startX - e.clientX))
+          const raw = dragRef.current.startWidth + (dragRef.current.startX - e.clientX)
+          const next = core.effectiveStripWidth(stageWidth, raw, SPLITTER_WIDTH)
           setLayout((current) => ({ width: next, collapsed: current.collapsed }))
         }
         const up = () => {
@@ -224,8 +258,10 @@ window.__ModuleLoader__.load({
         ? h(SessionProvider, { session: reference }, h(SurfaceBoundary, null, renderSlot(VIEW_SLOT, {})))
         : h('div', { style: { padding: 12, fontSize: 12, color: '#666' } }, failure || 'opening session…')
 
+      const stripWidth = core.effectiveStripWidth(stageWidth, layout.width, SPLITTER_WIDTH)
       return h('div', {
         'data-panel-dock-stage': '',
+        ref: stageRef,
         style: { display: 'flex', flexDirection: 'row', height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden' },
       },
         h('div', { style: { flex: '1 1 auto', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, conversation),
@@ -238,7 +274,7 @@ window.__ModuleLoader__.load({
         h('div', {
           'data-panel-dock-strip': '',
           style: {
-            flex: '0 0 auto', width: layout.width + 'px', height: '100%', boxSizing: 'border-box',
+            flex: '0 0 auto', width: stripWidth + 'px', height: '100%', boxSizing: 'border-box',
             display: 'flex', flexDirection: 'column', gap: 8, padding: 8, minHeight: 0,
             background: 'var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-module-platform))',
           },
@@ -249,6 +285,40 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function LeftDock() {
+      const registered = useRegistry()
+      const [layout, setLayout] = React.useState(readLayout)
+      React.useEffect(() => {
+        const sync = () => setLayout(readLayout())
+        listeners.add(sync)
+        return () => { listeners.delete(sync) }
+      }, [])
+      const leftPanels = registered.filter((panel) => panel.side === 'left' || panel.side === 'auto')
+      if (leftPanels.length === 0) return null
+      return h('div', {
+        'data-panel-dock-left': '',
+        style: { display: 'flex', flexDirection: 'column', gap: 6, width: '100%', minWidth: 0 },
+      }, leftPanels.map((panel) => {
+        const collapsed = core.isCollapsed(layout, panel.id)
+        if (collapsed) {
+          return h('div', {
+            key: panel.id,
+            'data-panel-dock-left-item': panel.id,
+            'data-panel-dock-collapsed': '',
+            style: { display: 'flex', alignItems: 'center', padding: '4px 8px', cursor: 'pointer',
+              border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-1)',
+              fontSize: 11, color: 'var(--dsw-alias-label-secondary)' },
+            onClick: () => setLayout((current) => { const next = core.toggleCollapsed(current, panel.id); writeLayout(next); return next }),
+          }, panel.title)
+        }
+        return h(panel.component, {
+          key: panel.id,
+          active: true,
+          'data-panel-dock-left-item': panel.id,
+          style: { width: '100%', minWidth: 0, boxSizing: 'border-box' },
+        })
+      }))
+    }
     function PanelIcon() {
       return h('svg', { viewBox: '0 0 16 16', width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 1.5 },
         h('rect', { x: 1.5, y: 2.5, width: 13, height: 11, rx: 2.5 }),
@@ -278,9 +348,13 @@ window.__ModuleLoader__.load({
       }
       try { window.__dshPanelDock = api } catch {}
       try { ctx.effect(() => { const previous = window.__dshPanelDock; return () => { if (window.__dshPanelDock === api) window.__dshPanelDock = undefined } }, 'panel-dock: global') } catch {}
+      // Register the sidebar entries at the top level: entries contributed from
+      // inside another entry's effect are torn down when that entry is not active,
+      // which would hide the left stack whenever the right column is closed.
+      ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: KEY, order: 25, label: () => T('panel'), locale: NS }, PanelIcon))
+      ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: KEY, order: 900, label: () => T('panel'), locale: NS }, LeftDock))
       ctx.slots.inject('main', function* () {
         yield ctx.slots.register({ name: 'main', key: KEY, locale: NS, children: { [VIEW_SLOT]: { kind: 'single', scope: 'session' } } }, Stage)
-        yield ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: KEY, order: 25, label: () => T('panel'), locale: NS }, PanelIcon))
       })
       ctx.slots.inject(VIEW_SLOT, () => ctx.slots.register({ name: VIEW_SLOT, locale: NS }, ConversationSurface))
       try { console.log('panel-dock: apply done') } catch {}

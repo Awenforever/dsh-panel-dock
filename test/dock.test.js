@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clampWidth, heightStyle, normalizePanels, parseLayout, serializeLayout, isCollapsed, toggleCollapsed, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH } from '../dock-core.js'
+import { clampWidth, heightStyle, normalizePanels, parseLayout, serializeLayout, isCollapsed, toggleCollapsed, effectiveStripWidth, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH, MIN_CONVERSATION, SPLITTER_WIDTH } from '../dock-core.js'
 
 test('clampWidth keeps sane values and rejects junk', () => {
   assert.equal(clampWidth(320), 320)
@@ -49,4 +49,17 @@ test('collapse helpers are pure', () => {
   assert.equal(isCollapsed(toggled, 'alpha'), true)
   assert.equal(isCollapsed(layout, 'alpha'), false)
   assert.deepEqual(toggleCollapsed(toggled, 'alpha').collapsed, { alpha: false })
+})
+
+test('effectiveStripWidth keeps the conversation floor', () => {
+  // plenty of room: the preference wins
+  assert.equal(effectiveStripWidth(1600, 320), 320)
+  assert.equal(effectiveStripWidth(1600, 720), 720)
+  // tight: shrink so the conversation keeps MIN_CONVERSATION
+  assert.equal(effectiveStripWidth(1024, 720), 1024 - MIN_CONVERSATION - SPLITTER_WIDTH)
+  // tighter than the floor allows: never below MIN_WIDTH
+  assert.equal(effectiveStripWidth(600, 720), MIN_WIDTH)
+  // junk stage width falls back to the preference
+  assert.equal(effectiveStripWidth(0, 300), 300)
+  assert.equal(effectiveStripWidth(undefined, 300), 300)
 })

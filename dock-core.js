@@ -2,6 +2,8 @@ export const DEFAULT_WIDTH = 320
 export const MIN_WIDTH = 200
 export const MAX_WIDTH = 720
 export const STORE_KEY = 'dsh.panel-dock.v1'
+export const SPLITTER_WIDTH = 5
+export const MIN_CONVERSATION = 420
 
 export function clampWidth(width) {
   const value = Number(width)
@@ -59,4 +61,14 @@ export function toggleCollapsed(layout, id) {
 
 export function visiblePanels(panels, layout) {
   return normalizePanels(panels).filter((panel) => panel && typeof panel.id === 'string')
+}
+
+// The strip may not squeeze the conversation below MIN_CONVERSATION. The stored
+// width is the user preference; the effective width is what the frame can afford.
+export function effectiveStripWidth(stageWidth, preferred, splitter = SPLITTER_WIDTH) {
+  const stage = Number(stageWidth)
+  if (!Number.isFinite(stage) || stage <= 0) return clampWidth(preferred)
+  const affordable = Math.floor(stage - MIN_CONVERSATION - splitter)
+  const capped = Math.min(clampWidth(preferred), affordable)
+  return Math.max(MIN_WIDTH, capped)
 }
