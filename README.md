@@ -38,6 +38,38 @@ dock.setSide('my-panel', 'left')
 Moving a panel to the right opens the column; moving the last right panel away closes it. The open
 state is remembered, so a reload restores the column exactly as the user left it.
 
+
+### Where the column sits: gutter vs takeover
+
+Two modes, chosen per installation and remembered:
+
+| Mode | What it does | When to use |
+|---|---|---|
+| `gutter` (default) | Keeps the shipped conversation exactly as it is and puts the panels in the empty band between the transcript drag handle and the turn navigator | You want the panels next to the conversation without losing the drag handle or the turn rail |
+| `takeover` | Replaces the conversation slot with a real three-part layout: conversation, splitter, column | You want a draggable full-height column that owns its own width |
+
+```js
+dock.getMode()            // 'gutter' | 'takeover'
+dock.setMode('takeover')
+```
+
+The gutter mode measures three anchors of the shipped layout:
+
+- left = the right transcript handle `.right + 6`
+- right = the turn navigator leftmost button `.left − 6`
+- top = the conversation tab strip `.bottom + 6`
+
+If the gutter is narrower than 200px a readable panel no longer fits, so that viewport
+automatically uses the takeover column instead (and hands the slot back when the window
+grows). Nothing ever overlaps conversation text.
+
+Panel width in gutter mode equals the gutter width; widen it by dragging the transcript
+handle, which is the shipped way to give the band more room.
+
+### Collapsing
+
+`dock.setCollapsed(id, true)` shrinks a panel to a 25px title bar in either dock; the
+state is persisted per panel.
 ### Panel component contract
 
 1. Render **one root element** and **spread the props you receive** onto it, keeping `style` last.
