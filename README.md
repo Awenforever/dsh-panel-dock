@@ -1,0 +1,56 @@
+# dsh-panel-dock
+
+One owner for plugin panels in DeepSeek Harness: a **real right-hand column** beside the conversation, plus a managed left stack.
+
+## Why
+
+Without this, every UI plugin invents its own `position: fixed` dock, hand-measures the conversation column, and negotiates stacking with whatever else is docked — which produces overlap, mutual yielding loops, and dependence on internal class names and localized aria labels.
+
+`dsh-panel-dock` takes over the `main` slot, lays out `conversation | splitter | strip` as real flex children, and renders each registered panel **directly** in the strip (no wrapper chrome).
+
+## API
+
+```js
+const dock = window.__dshPanelDock   // ready once the dock plugin is active
+
+const dispose = dock.define({
+  id: 'my-panel',          // unique
+  title: 'My panel',       // used by the collapsed bar
+  order: 100,              // lower comes first
+  height: 'fill',          // "fill" | "auto" | <pixels>
+  component: MyPanel,      // see the contract below
+})
+```
+
+Other calls: `open()`, `close()`, `isOpen()`, `panels()`, `getWidth()`, `setWidth(px)`, `setCollapsed(id, bool)`, `toggle(id)`, `getLayout()`.
+
+### Panel component contract
+
+1. Render **one root element** and **spread the props you receive** onto it, keeping `style` last.
+2. Never position yourself (`position: fixed`, margins that fight the column, explicit width). The dock owns geometry.
+3. Your element is the visual rectangle — the dock adds no border, radius, padding or title bar.
+
+### Readiness
+
+Client plugin bundles resolve bare module ids only, so the dock publishes a single well-known global instead of a Cordis service. Consumers poll on activation:
+
+```js
+const register = () => {
+  const dock = window.__dshPanelDock
+  if (!dock) return setTimeout(register, 200)
+  const dispose = dock.define({ /* … */ })
+}
+register()
+```
+
+## Layout state
+
+`localStorage["dsh.panel-dock.v1"] = { width, collapsed: { [id]: true } }`; width is clamped to 200-720.
+
+## Status
+
+Early development. Right column, height modes, collapse, width drag and persistence are implemented and verified on a test machine; the left stack and the migration of existing plugins are in progress.
+
+## License
+
+MIT

@@ -1,0 +1,50 @@
+{
+  "name": "dsh-panel-dock",
+  "version": "0.1.0",
+  "description": "One owner for plugin panels: a real right-hand column beside the conversation, plus a managed left stack.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Awenforever",
+  "homepage": "https://github.com/Awenforever/dsh-panel-dock#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Awenforever/dsh-panel-dock.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "panel",
+    "dock",
+    "layout"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./dock-core": "./dock-core.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "dock-core.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
+  "scripts": {
+    "test": "node --test test/dock.test.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}
