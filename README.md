@@ -24,11 +24,28 @@ const dispose = dock.define({
 
 Other calls: `open()`, `close()`, `isOpen()`, `panels()`, `getWidth()`, `setWidth(px)`, `setCollapsed(id, bool)`, `toggle(id)`, `getLayout()`.
 
+### Where a panel lives
+
+A panel starts on the side its definition asks for (`side: "left" | "right"`, default `right`) and the
+user can move it with the panel own toggle button:
+
+```js
+dock.toggleSide('my-panel')   // returns the new side
+dock.getSide('my-panel')      // read it for the glyph direction
+dock.setSide('my-panel', 'left')
+```
+
+Moving a panel to the right opens the column; moving the last right panel away closes it. The open
+state is remembered, so a reload restores the column exactly as the user left it.
+
 ### Panel component contract
 
 1. Render **one root element** and **spread the props you receive** onto it, keeping `style` last.
 2. Never position yourself (`position: fixed`, margins that fight the column, explicit width). The dock owns geometry.
 3. Your element is the visual rectangle — the dock adds no border, radius, padding or title bar.
+4. On the **left** the dock only supplies `width: 100%`; a panel there must have intrinsic height.
+   On the **right** the dock also supplies flex sizing from `height`: `"fill"` grows, a number is fixed,
+   `"auto"` keeps the content height.
 
 ### Readiness
 
