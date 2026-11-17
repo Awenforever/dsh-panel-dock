@@ -119,9 +119,17 @@ window.__ModuleLoader__.load({
       try { window.localStorage.setItem(MODE_STORE, MODES.includes(mode) ? mode : 'gutter') } catch {}
     }
     function isOpen() { return readLayout().open === true }
+    function selectOwnSlot(ctx, value) {
+      suppressSlotSync = true
+      try { ctx.layout.selectPanel(value) } catch {}
+      setTimeout(() => { suppressSlotSync = false }, 200)
+    }
     function setOpen(value) { const next = core.cloneLayout(readLayout()); next.open = Boolean(value); writeLayout(next); emit() }
 
     let CTX = null
+    // Set while the dock itself selects the conversation slot, so the sidebar-icon
+    // watcher does not mistake a programmatic hand-over for a user click.
+    let suppressSlotSync = false
     const registry = new Map()
     const listeners = new Set()
 
@@ -381,15 +389,19 @@ window.__ModuleLoader__.load({
       }, [])
       if (layout.open !== true) return null
       if (readMode() !== 'gutter') return null
-      if (!anchors || anchors.left === null) return null
-      const span = anchors.right !== null ? anchors.right - anchors.left : core.clampWidth(layout.width)
-      if (span < MIN_PANEL_WIDTH) return null
+      // The takeover column owns the right side when it is active; never render the
+      // gutter strip on top of it.
+      if (typeof document !== 'undefined' && document.querySelector('[data-panel-dock-stage]')) return null
+      // Without a conversation there are no anchors; the strip then floats at the
+      // right edge so the icon still shows something useful on the home screen.
+      const anchored = anchors && anchors.left !== null && anchors.right !== null
+      const span = anchored ? anchors.right - anchors.left : core.clampWidth(layout.width)
+      if (anchored && span < MIN_PANEL_WIDTH) return null
       const sideOf = (panel) => core.effectiveSide(layout, panel.id, panel.side)
       const rightPanels = all.filter((panel) => sideOf(panel) === 'right')
-      if (rightPanels.length === 0) return null
       const style = {
         position: 'fixed',
-        top: (anchors ? anchors.top : 6),
+        top: anchored ? anchors.top : 8,
         bottom: 8,
         display: 'flex',
         flexDirection: 'column',
@@ -399,17 +411,17 @@ window.__ModuleLoader__.load({
         pointerEvents: 'auto',
         zIndex: 30,
       }
-      if (anchors && anchors.right !== null) {
+      if (anchored) {
         style.right = Math.max(6, window.innerWidth - anchors.right)
-        style.width = span
-      } else if (anchors && anchors.left !== null) {
-        style.left = anchors.left
         style.width = span
       } else {
         style.right = 8
         style.width = core.clampWidth(layout.width)
       }
-      return h('div', { 'data-panel-dock-strip': '', 'data-panel-dock-mode': 'gutter', style }, rightPanels.map((panel) => renderPanel(panel, layout, setLayout)))
+      return h('div', { 'data-panel-dock-strip': '', 'data-panel-dock-mode': 'gutter', style },
+        rightPanels.length === 0
+          ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', padding: 8 } }, T('empty'))
+          : rightPanels.map((panel) => renderPanel(panel, layout, setLayout)))
     }
 
     function LeftDock() {
@@ -574,7 +586,7 @@ window.__ModuleLoader__.load({
           if (layout.open === true && hasRight && readMode() === 'takeover') {
             try {
               const before = ctx.layout.panelInfo.getSnapshot().activePanelId
-              if (before !== KEY) ctx.layout.selectPanel(KEY)
+              if (before !== KEY) selectOwnSlot(ctx, KEY)
               // selectPanel can be accepted before the keyed entry is registered, so the
               // only trustworthy success signal is the stage actually being in the DOM.
               if (document.querySelector('[data-panel-dock-stage]')) return
@@ -620,7 +632,7 @@ window.__ModuleLoader__.load({
           const anchors = measureAnchors()
           if (!anchors || anchors.left === null || anchors.right === null) return
           const span = anchors.right - anchors.left
-          if (span < MIN_PANEL_WIDTH && !active()) { try { ctx.layout.selectPanel(KEY) } catch {} }
+          if (span < MIN_PANEL_WIDTH && !active()) selectOwnSlot(ctx, KEY)
           if (span >= MIN_PANEL_WIDTH && active()) { try { ctx.layout.selectPanel(null) } catch {} }
         }
         const onResize = () => {
@@ -634,6 +646,29 @@ window.__ModuleLoader__.load({
         timer = setTimeout(decide, 700)
         return () => { window.removeEventListener('resize', onResize); clearTimeout(timer) }
       }, 'panel-dock: narrow viewport handoff')
+      // In gutter mode the sidebar icon belongs to the strip, not to the conversation
+      // slot: taking that slot over would hide the shipped layout for no reason.
+      ctx.effect(() => {
+        const source = ctx.layout && ctx.layout.panelInfo
+        if (!source || typeof source.subscribe !== 'function') return undefined
+        let previous = null
+        const sync = () => {
+          let active = null
+          try { active = source.getSnapshot().activePanelId } catch (e) { return }
+          if (active === previous) return
+          previous = active
+          if (active !== KEY) return
+          if (suppressSlotSync) return
+          if (readMode() === 'gutter') {
+            setOpen(!isOpen())
+            try { ctx.layout.selectPanel(null) } catch {}
+            return
+          }
+          setOpen(true)
+        }
+        const dispose = source.subscribe(sync)
+        return () => { if (typeof dispose === 'function') dispose() }
+      }, 'panel-dock: sidebar icon toggles the strip')
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: KEY + '-gutter', order: 40, locale: NS }, GutterStrip))
       // The takeover column only renders when the gutter cannot hold the panels.
       ctx.slots.inject('main', function* () {
