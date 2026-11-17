@@ -108,6 +108,10 @@ window.__ModuleLoader__.load({
     // empty band between the transcript handle and the turn navigator; 'takeover'
     // replaces the conversation slot with a real three-part layout.
     const MODES = ['gutter', 'takeover']
+    // A panel narrower than this is unreadable, so the strip keeps this width and
+    // lets its left edge sit over the transcript's right margin when the gutter is
+    // narrower (the margin is empty by construction).
+    const MIN_PANEL_WIDTH = 200
     function readMode() {
       try { const raw = window.localStorage.getItem(MODE_STORE); return MODES.includes(raw) ? raw : 'gutter' } catch { return 'gutter' }
     }
@@ -375,8 +379,11 @@ window.__ModuleLoader__.load({
         const timer = setInterval(schedule, 700)
         return () => { window.removeEventListener('resize', schedule); clearInterval(timer); if (raf) cancelAnimationFrame(raf) }
       }, [])
-      if (readMode() !== 'gutter' || layout.open !== true) return null
+      if (layout.open !== true) return null
+      if (readMode() !== 'gutter') return null
       if (!anchors || anchors.left === null) return null
+      const span = anchors.right !== null ? anchors.right - anchors.left : core.clampWidth(layout.width)
+      if (span < MIN_PANEL_WIDTH) return null
       const sideOf = (panel) => core.effectiveSide(layout, panel.id, panel.side)
       const rightPanels = all.filter((panel) => sideOf(panel) === 'right')
       if (rightPanels.length === 0) return null
@@ -392,10 +399,16 @@ window.__ModuleLoader__.load({
         pointerEvents: 'auto',
         zIndex: 30,
       }
-      if (anchors && anchors.left !== null) style.left = anchors.left
-      if (anchors && anchors.right !== null) style.right = Math.max(6, window.innerWidth - anchors.right)
-      if (!style.left && !style.right) { style.right = 8 }
-      if (!style.left) { style.width = core.clampWidth(layout.width) }
+      if (anchors && anchors.right !== null) {
+        style.right = Math.max(6, window.innerWidth - anchors.right)
+        style.width = span
+      } else if (anchors && anchors.left !== null) {
+        style.left = anchors.left
+        style.width = span
+      } else {
+        style.right = 8
+        style.width = core.clampWidth(layout.width)
+      }
       return h('div', { 'data-panel-dock-strip': '', 'data-panel-dock-mode': 'gutter', style }, rightPanels.map((panel) => renderPanel(panel, layout, setLayout)))
     }
 
@@ -530,6 +543,9 @@ window.__ModuleLoader__.load({
         const read = () => { try { return source.getSnapshot().activePanelId === KEY } catch { return false } }
         let previous = read()
         const sync = () => {
+          // Only the takeover mode binds the open flag to the conversation slot; in
+          // gutter mode the strip is independent of who owns that slot.
+          if (readMode() !== 'takeover') return
           const current = read()
           if (current === previous) return
           previous = current
@@ -574,7 +590,39 @@ window.__ModuleLoader__.load({
           } catch {}
         }, 300)
       }
+      // Wide viewports use the approved gutter position; narrow ones cannot hold a
+      // readable panel there without covering conversation text, so that viewport
+      // falls back to the full-height column and the slot is handed back when the
+      // window grows again.
+      ctx.effect(() => {
+        let timer = 0
+        const active = () => { try { return ctx.layout.panelInfo.getSnapshot().activePanelId === KEY } catch { return false } }
+        const decide = () => {
+          const layout = readLayout()
+          const hasRight = panels().some((panel) => core.effectiveSide(layout, panel.id, panel.side) === 'right')
+          if (readMode() !== 'gutter' || layout.open !== true || !hasRight) {
+            if (active()) { try { ctx.layout.selectPanel(null) } catch {} }
+            return
+          }
+          const anchors = measureAnchors()
+          if (!anchors || anchors.left === null || anchors.right === null) return
+          const span = anchors.right - anchors.left
+          if (span < MIN_PANEL_WIDTH && !active()) { try { ctx.layout.selectPanel(KEY) } catch {} }
+          if (span >= MIN_PANEL_WIDTH && active()) { try { ctx.layout.selectPanel(null) } catch {} }
+        }
+        const onResize = () => {
+          // Measuring requires the shipped layout, so hand the slot back before
+          // deciding; the flicker lasts one debounce window.
+          if (active()) { try { ctx.layout.selectPanel(null) } catch {} }
+          clearTimeout(timer)
+          timer = setTimeout(decide, 400)
+        }
+        window.addEventListener('resize', onResize)
+        timer = setTimeout(decide, 700)
+        return () => { window.removeEventListener('resize', onResize); clearTimeout(timer) }
+      }, 'panel-dock: narrow viewport handoff')
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: KEY + '-gutter', order: 40, locale: NS }, GutterStrip))
+      // The takeover column only renders when the gutter cannot hold the panels.
       ctx.slots.inject('main', function* () {
         yield ctx.slots.register({ name: 'main', key: KEY, locale: NS, children: { [VIEW_SLOT]: { kind: 'single', scope: 'session' } } }, Stage)
       })
