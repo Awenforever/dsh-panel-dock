@@ -78,18 +78,22 @@ window.__ModuleLoader__.load({
         return fallback === 'left' ? 'left' : 'right'
       },
       withSide(layout, id, side) {
-        const next = {
-          width: core.clampWidth(layout && layout.width),
-          collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
-          sides: Object.assign({}, (layout && layout.sides) || {}),
-        }
+        const next = core.cloneLayout(layout)
         if (side === 'left' || side === 'right') next.sides[id] = side
         else delete next.sides[id]
         return next
       },
       otherSide(side) { return side === 'left' ? 'right' : 'left' },
+      cloneLayout(layout) {
+        return {
+          width: core.clampWidth(layout && layout.width),
+          collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
+          sides: Object.assign({}, (layout && layout.sides) || {}),
+          open: Boolean(layout && layout.open),
+        }
+      },
       toggleCollapsed(layout, id) {
-        const next = { width: core.clampWidth(layout && layout.width), collapsed: Object.assign({}, (layout && layout.collapsed) || {}) }
+        const next = core.cloneLayout(layout)
         next.collapsed[id] = next.collapsed[id] !== true
         return next
       },
@@ -386,8 +390,8 @@ window.__ModuleLoader__.load({
         close: () => { try { ctx.layout.selectPanel(null) } catch {} },
         isOpen: () => { try { return ctx.layout.panelInfo.getSnapshot().activePanelId === KEY } catch { return false } },
         getWidth: () => readLayout().width,
-        setWidth: (width) => { const next = { width: core.clampWidth(width), collapsed: readLayout().collapsed }; writeLayout(next); emit(); return next.width },
-        setCollapsed: (id, value) => { const current = readLayout(); const next = { width: current.width, collapsed: Object.assign({}, current.collapsed) }; if (value) next.collapsed[id] = true; else delete next.collapsed[id]; writeLayout(next); emit(); return Boolean(next.collapsed[id]) },
+        setWidth: (width) => { const next = core.cloneLayout(readLayout()); next.width = core.clampWidth(width); writeLayout(next); emit(); return next.width },
+        setCollapsed: (id, value) => { const next = core.cloneLayout(readLayout()); if (value) next.collapsed[id] = true; else delete next.collapsed[id]; writeLayout(next); emit(); return Boolean(next.collapsed[id]) },
         toggle: (id) => { const current = readLayout(); const next = core.toggleCollapsed(current, id); writeLayout(next); emit(); return Boolean(next.collapsed[id]) },
         getLayout: () => readLayout(),
         getSide: (id) => { const layout = readLayout(); const panel = registry.get(id); return core.effectiveSide(layout, id, panel ? panel.side : 'right') },

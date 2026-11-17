@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clampWidth, heightStyle, normalizePanels, parseLayout, serializeLayout, isCollapsed, toggleCollapsed, effectiveStripWidth, effectiveSide, withSide, otherSide, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH, MIN_CONVERSATION, SPLITTER_WIDTH } from '../dock-core.js'
+import { clampWidth, heightStyle, normalizePanels, parseLayout, serializeLayout, isCollapsed, toggleCollapsed, effectiveStripWidth, effectiveSide, withSide, otherSide, cloneLayout, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH, MIN_CONVERSATION, SPLITTER_WIDTH } from '../dock-core.js'
 
 test('clampWidth keeps sane values and rejects junk', () => {
   assert.equal(clampWidth(320), 320)
@@ -83,4 +83,12 @@ test('the open flag round-trips', () => {
   assert.equal(parseLayout(serializeLayout(layout)).open, true)
   assert.equal(parseLayout(serializeLayout({ width: 300 })).open, false)
   assert.equal(parseLayout(JSON.stringify({ width: 300, open: 'yes' })).open, false)
+})
+
+test('every layout write keeps sides and open', () => {
+  const base = { width: 400, collapsed: {}, sides: { a: 'left' }, open: true }
+  assert.deepEqual(toggleCollapsed(base, 'b'), { width: 400, collapsed: { b: true }, sides: { a: 'left' }, open: true })
+  assert.deepEqual(withSide(base, 'b', 'right'), { width: 400, collapsed: {}, sides: { a: 'left', b: 'right' }, open: true })
+  assert.deepEqual(cloneLayout(base), base)
+  assert.deepEqual(cloneLayout(undefined), { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false })
 })

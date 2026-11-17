@@ -65,8 +65,17 @@ export function isCollapsed(layout, id) {
   return Boolean(layout && layout.collapsed && layout.collapsed[id] === true)
 }
 
+export function cloneLayout(layout) {
+  return {
+    width: clampWidth(layout && layout.width),
+    collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
+    sides: Object.assign({}, (layout && layout.sides) || {}),
+    open: Boolean(layout && layout.open),
+  }
+}
+
 export function toggleCollapsed(layout, id) {
-  const next = { width: clampWidth(layout && layout.width), collapsed: Object.assign({}, (layout && layout.collapsed) || {}) }
+  const next = cloneLayout(layout)
   next.collapsed[id] = next.collapsed[id] !== true
   return next
 }
@@ -94,11 +103,7 @@ export function effectiveSide(layout, id, fallback = 'right') {
 }
 
 export function withSide(layout, id, side) {
-  const next = {
-    width: clampWidth(layout && layout.width),
-    collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
-    sides: Object.assign({}, (layout && layout.sides) || {}),
-  }
+  const next = cloneLayout(layout)
   if (side === 'left' || side === 'right') next.sides[id] = side
   else delete next.sides[id]
   return next
