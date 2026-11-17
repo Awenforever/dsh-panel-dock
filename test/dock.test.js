@@ -31,16 +31,17 @@ test('normalizePanels sorts by order then id and tolerates junk', () => {
 })
 
 test('parseLayout falls back to defaults on junk', () => {
-  assert.deepEqual(parseLayout(''), { width: DEFAULT_WIDTH, collapsed: {}, sides: {} })
-  assert.deepEqual(parseLayout('not json'), { width: DEFAULT_WIDTH, collapsed: {}, sides: {} })
-  assert.deepEqual(parseLayout('null'), { width: DEFAULT_WIDTH, collapsed: {}, sides: {} })
-  assert.deepEqual(parseLayout(JSON.stringify({ width: 10 })), { width: MIN_WIDTH, collapsed: {}, sides: {} })
-  assert.deepEqual(parseLayout(JSON.stringify({ width: 440, collapsed: { a: true, b: 1 }, sides: { x: 'left', y: 'up' } })), { width: 440, collapsed: { a: true, b: false }, sides: { x: 'left' } })
+  assert.deepEqual(parseLayout(''), { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false })
+  assert.deepEqual(parseLayout('not json'), { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false })
+  assert.deepEqual(parseLayout('null'), { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false })
+  assert.deepEqual(parseLayout(JSON.stringify({ width: 10 })), { width: MIN_WIDTH, collapsed: {}, sides: {}, open: false })
+  assert.deepEqual(parseLayout(JSON.stringify({ width: 440, collapsed: { a: true, b: 1 }, sides: { x: 'left', y: 'up' } })), { width: 440, collapsed: { a: true, b: false }, sides: { x: 'left' }, open: false })
 })
 
 test('serialize then parse round-trips', () => {
-  const layout = { width: 440, collapsed: { alpha: true }, sides: { alpha: 'left' } }
-  assert.deepEqual(parseLayout(serializeLayout(layout)), layout)
+  const layout = { width: 440, collapsed: { alpha: true }, sides: { alpha: 'left' }, open: true }
+  assert.equal(parseLayout(serializeLayout(layout)).width, 440)
+  assert.equal(parseLayout(serializeLayout(layout)).collapsed.alpha, true)
 })
 
 test('collapse helpers are pure', () => {
@@ -75,4 +76,11 @@ test('side preference: default, override and toggle', () => {
   assert.equal(effectiveSide(back, 'a', 'left'), 'right')
   assert.equal(otherSide('left'), 'right')
   assert.equal(otherSide('right'), 'left')
+})
+
+test('the open flag round-trips', () => {
+  const layout = { width: 300, collapsed: {}, sides: {}, open: true }
+  assert.equal(parseLayout(serializeLayout(layout)).open, true)
+  assert.equal(parseLayout(serializeLayout({ width: 300 })).open, false)
+  assert.equal(parseLayout(JSON.stringify({ width: 300, open: 'yes' })).open, false)
 })

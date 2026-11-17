@@ -30,7 +30,7 @@ export function normalizePanels(panels) {
 }
 
 export function defaultLayout() {
-  return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} }
+  return { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false }
 }
 
 export function parseLayout(raw) {
@@ -49,7 +49,7 @@ export function parseLayout(raw) {
       if (value === 'left' || value === 'right') sides[key] = value
     }
   }
-  return { width: clampWidth(parsed.width), collapsed, sides }
+  return { width: clampWidth(parsed.width), collapsed, sides, open: parsed.open === true }
 }
 
 export function serializeLayout(layout) {
@@ -57,6 +57,7 @@ export function serializeLayout(layout) {
     width: clampWidth(layout && layout.width),
     collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
     sides: Object.assign({}, (layout && layout.sides) || {}),
+    open: Boolean(layout && layout.open),
   })
 }
 

@@ -37,12 +37,12 @@ window.__ModuleLoader__.load({
           return String(a.id).localeCompare(String(b.id))
         })
       },
-      defaultLayout() { return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} } },
+      defaultLayout() { return { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false } },
       parseLayout(raw) {
-        if (typeof raw !== 'string' || raw === '') return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} }
+        if (typeof raw !== 'string' || raw === '') return { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false }
         let parsed = null
-        try { parsed = JSON.parse(raw) } catch { return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} } }
-        if (!parsed || typeof parsed !== 'object') return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} }
+        try { parsed = JSON.parse(raw) } catch { return { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false } }
+        if (!parsed || typeof parsed !== 'object') return { width: DEFAULT_WIDTH, collapsed: {}, sides: {}, open: false }
         const collapsed = {}
         if (parsed.collapsed && typeof parsed.collapsed === 'object') {
           for (const key of Object.keys(parsed.collapsed)) collapsed[key] = parsed.collapsed[key] === true
@@ -54,13 +54,14 @@ window.__ModuleLoader__.load({
             if (value === 'left' || value === 'right') sides[key] = value
           }
         }
-        return { width: core.clampWidth(parsed.width), collapsed, sides }
+        return { width: core.clampWidth(parsed.width), collapsed, sides, open: parsed.open === true }
       },
       serializeLayout(layout) {
         return JSON.stringify({
           width: core.clampWidth(layout && layout.width),
           collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
           sides: Object.assign({}, (layout && layout.sides) || {}),
+          open: Boolean(layout && layout.open),
         })
       },
       isCollapsed(layout, id) { return Boolean(layout && layout.collapsed && layout.collapsed[id] === true) },
@@ -207,6 +208,7 @@ window.__ModuleLoader__.load({
       const [layout, setLayout] = React.useState(readLayout)
       const registered = allPanels.filter((panel) => core.effectiveSide(layout, panel.id, panel.side) === 'right')
       const [stageWidth, setStageWidth] = React.useState(0)
+
       const stageRef = React.useRef(null)
       React.useEffect(() => {
         const node = stageRef.current
@@ -353,6 +355,21 @@ window.__ModuleLoader__.load({
         h('line', { x1: 10, y1: 2.5, x2: 10, y2: 13.5 }))
     }
 
+    // Keep the remembered open flag consistent with the panels that are actually on
+    // the right: a move to the right opens the column, a move away closes it when
+    // nothing is left there.
+    function reconcileOpen(ctx, id, resolved) {
+      const layout = readLayout()
+      const anyRight = panels().some((panel) => core.effectiveSide(layout, panel.id, panel.side) === 'right')
+      const shouldOpen = resolved === 'right' || anyRight
+      const nextLayout = Object.assign({}, layout, { open: shouldOpen })
+      if (layout.open !== shouldOpen) writeLayout(nextLayout)
+      try {
+        const active = ctx.layout.panelInfo.getSnapshot().activePanelId
+        if (shouldOpen && active !== KEY) ctx.layout.selectPanel(KEY)
+        if (!shouldOpen && active === KEY) ctx.layout.selectPanel(null)
+      } catch {}
+    }
     function apply(ctx) {
       try { console.log('panel-dock: apply start') } catch {}
       CTX = ctx
@@ -374,8 +391,26 @@ window.__ModuleLoader__.load({
         toggle: (id) => { const current = readLayout(); const next = core.toggleCollapsed(current, id); writeLayout(next); emit(); return Boolean(next.collapsed[id]) },
         getLayout: () => readLayout(),
         getSide: (id) => { const layout = readLayout(); const panel = registry.get(id); return core.effectiveSide(layout, id, panel ? panel.side : 'right') },
-        setSide: (id, side) => { const next = core.withSide(readLayout(), id, side); writeLayout(next); emit(); return Boolean(side) },
-        toggleSide: (id) => { const layout = readLayout(); const panel = registry.get(id); const current = core.effectiveSide(layout, id, panel ? panel.side : 'right'); const next = core.withSide(layout, id, core.otherSide(current)); writeLayout(next); emit(); return core.effectiveSide(next, id, panel ? panel.side : 'right') },
+        setSide: (id, side) => {
+          const next = core.withSide(readLayout(), id, side);
+          writeLayout(next);
+          emit();
+          // Moving a panel to the right column only makes sense if the column is
+          // visible, so opening it is part of the move rather than a second step.
+          reconcileOpen(ctx, id, core.effectiveSide(next, id, 'right'))
+          return Boolean(side)
+        },
+        toggleSide: (id) => {
+          const layout = readLayout();
+          const panel = registry.get(id);
+          const current = core.effectiveSide(layout, id, panel ? panel.side : 'right');
+          const next = core.withSide(layout, id, core.otherSide(current));
+          writeLayout(next);
+          emit();
+          const resolved = core.effectiveSide(next, id, panel ? panel.side : 'right');
+          reconcileOpen(ctx, id, resolved)
+          return resolved
+        },
       }
       try { window.__dshPanelDock = api } catch {}
       try { ctx.effect(() => { const previous = window.__dshPanelDock; return () => { if (window.__dshPanelDock === api) window.__dshPanelDock = undefined } }, 'panel-dock: global') } catch {}
@@ -384,6 +419,46 @@ window.__ModuleLoader__.load({
       // which would hide the left stack whenever the right column is closed.
       ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: KEY, order: 25, label: () => T('panel'), locale: NS }, PanelIcon))
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({ name: 'sidebar.footer.action', id: KEY, order: 900, label: () => T('panel'), locale: NS }, LeftDock))
+      // Remember whether the user keeps this column open, so a reload restores it.
+      ctx.effect(() => {
+        const source = ctx.layout && ctx.layout.panelInfo
+        if (!source || typeof source.getSnapshot !== 'function') return undefined
+        const read = () => { try { return source.getSnapshot().activePanelId === KEY } catch { return false } }
+        let previous = read()
+        const sync = () => {
+          const current = read()
+          if (current === previous) return
+          previous = current
+          const layout = readLayout()
+          if (layout.open !== current) writeLayout(Object.assign({}, layout, { open: current }))
+        }
+        const dispose = typeof source.subscribe === 'function' ? source.subscribe(sync) : null
+        sync()
+        return () => { if (typeof dispose === 'function') dispose() }
+      }, 'panel-dock: remember open state')
+      // Re-open the column on startup when the user left it open. Panels register
+      // asynchronously and the main entry must exist first, so poll instead of
+      // assuming everything is ready one tick after apply().
+      ctx.effect(() => {
+        let attempts = 0
+        let timer = 0
+        const tick = () => {
+          attempts += 1
+          if (attempts > 60) return
+          const layout = readLayout()
+          const hasRight = panels().some((panel) => core.effectiveSide(layout, panel.id, panel.side) === 'right')
+          if (layout.open === true && hasRight) {
+            try {
+              const active = ctx.layout.panelInfo.getSnapshot().activePanelId
+              if (active !== KEY) ctx.layout.selectPanel(KEY)
+              return
+            } catch {}
+          }
+          timer = setTimeout(tick, 500)
+        }
+        timer = setTimeout(tick, 500)
+        return () => { if (timer) clearTimeout(timer) }
+      }, 'panel-dock: restore open state')
       ctx.slots.inject('main', function* () {
         yield ctx.slots.register({ name: 'main', key: KEY, locale: NS, children: { [VIEW_SLOT]: { kind: 'single', scope: 'session' } } }, Stage)
       })
