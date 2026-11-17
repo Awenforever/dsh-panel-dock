@@ -300,7 +300,7 @@ window.__ModuleLoader__.load({
           if (!dragRef.current) return
           const raw = dragRef.current.startWidth + (dragRef.current.startX - e.clientX)
           const next = core.effectiveStripWidth(stageWidth, raw, SPLITTER_WIDTH)
-          setLayout((current) => ({ width: next, collapsed: current.collapsed }))
+          setLayout((current) => { const copy = core.cloneLayout(current); copy.width = next; return copy })
         }
         const up = () => {
           dragRef.current = null
@@ -549,8 +549,12 @@ window.__ModuleLoader__.load({
           const current = read()
           if (current === previous) return
           previous = current
+          // Becoming the active panel opens the column; losing that slot does NOT
+          // close it, because the host clears the active panel on page unload and a
+          // reload must still find the column open. close() writes false explicitly.
+          if (!current) return
           const layout = readLayout()
-          if (layout.open !== current) writeLayout(Object.assign({}, layout, { open: current }))
+          if (layout.open !== true) writeLayout(Object.assign({}, layout, { open: true }))
         }
         const dispose = typeof source.subscribe === 'function' ? source.subscribe(sync) : null
         sync()
@@ -569,16 +573,25 @@ window.__ModuleLoader__.load({
           const hasRight = panels().some((panel) => core.effectiveSide(layout, panel.id, panel.side) === 'right')
           if (layout.open === true && hasRight && readMode() === 'takeover') {
             try {
-              const active = ctx.layout.panelInfo.getSnapshot().activePanelId
-              if (active !== KEY) ctx.layout.selectPanel(KEY)
-              return
+              const before = ctx.layout.panelInfo.getSnapshot().activePanelId
+              if (before !== KEY) ctx.layout.selectPanel(KEY)
+              // selectPanel can be accepted before the keyed entry is registered, so the
+              // only trustworthy success signal is the stage actually being in the DOM.
+              if (document.querySelector('[data-panel-dock-stage]')) return
             } catch {}
           }
           if (readMode() === 'gutter') return
           timer = setTimeout(tick, 500)
         }
         timer = setTimeout(tick, 500)
-        return () => { if (timer) clearTimeout(timer) }
+        // Panels register at their own pace and the keyed entry appears later still,
+        // so also retry whenever the registry changes instead of only on a timer.
+        const unsubscribe = subscribe(() => {
+          if (timer) clearTimeout(timer)
+          attempts = 0
+          timer = setTimeout(tick, 120)
+        })
+        return () => { if (timer) clearTimeout(timer); unsubscribe() }
       }, 'panel-dock: restore open state')
       // A previous takeover leaves this plugin as the active main panel; in gutter
       // mode the shipped conversation must own that slot, so clear it explicitly.
