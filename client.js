@@ -103,6 +103,19 @@ window.__ModuleLoader__.load({
     const VIEW_SLOT = 'panel-dock.view'
     const NS = 'panel-dock'
     const SIDE_STORE = 'dsh.panel-dock.side.v1'
+    const MODE_STORE = 'dsh.panel-dock.mode.v1'
+    // 'gutter' keeps the shipped conversation layout and puts the panels in the
+    // empty band between the transcript handle and the turn navigator; 'takeover'
+    // replaces the conversation slot with a real three-part layout.
+    const MODES = ['gutter', 'takeover']
+    function readMode() {
+      try { const raw = window.localStorage.getItem(MODE_STORE); return MODES.includes(raw) ? raw : 'gutter' } catch { return 'gutter' }
+    }
+    function writeMode(mode) {
+      try { window.localStorage.setItem(MODE_STORE, MODES.includes(mode) ? mode : 'gutter') } catch {}
+    }
+    function isOpen() { return readLayout().open === true }
+    function setOpen(value) { const next = core.cloneLayout(readLayout()); next.open = Boolean(value); writeLayout(next); emit() }
 
     let CTX = null
     const registry = new Map()
@@ -169,6 +182,13 @@ window.__ModuleLoader__.load({
       const [, force] = React.useState(0)
       React.useEffect(() => subscribe(() => force((n) => n + 1)), [])
       return panels()
+    }
+
+    function useLayoutState() {
+      const [layout, setLayout] = React.useState(readLayout)
+      const apply = React.useCallback((next) => { writeLayout(next); setLayout(next); emit() }, [])
+      React.useEffect(() => subscribe(() => setLayout(readLayout())), [])
+      return [layout, apply]
     }
 
     // Render a panel element directly into the strip: no wrapper chrome.
@@ -319,6 +339,66 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // Geometry of the approved position: right of the transcript drag handle, left
+    // of the turn navigator, starting under the conversation tab strip. Both anchors
+    // belong to the shipped layout, so they are measured, never assumed; when they
+    // are missing the strip falls back to the conversation's right edge.
+    function measureAnchors() {
+      if (typeof document === 'undefined') return null
+      const rect = (el) => el.getBoundingClientRect()
+      let left = null
+      let right = null
+      let top = 6
+      try {
+        const handle = [...document.querySelectorAll('[class*="widthHandle"]')].find((el) => el.getAttribute('data-side') === 'right')
+        if (handle) left = Math.round(rect(handle).right) + 6
+        const railXs = [...document.querySelectorAll('button[aria-label]')]
+          .filter((el) => /turnNavigation|轮次|跳转/i.test(el.getAttribute('aria-label') || ''))
+          .map((el) => Math.round(rect(el).left))
+          .filter((x) => x > (left || 0) + 40)
+        if (railXs.length) right = Math.round(Math.min(...railXs)) - 6
+        const tabs = document.querySelector('[data-conversation-tabs]')
+        if (tabs) top = Math.round(rect(tabs.parentElement || tabs).bottom) + 6
+      } catch {}
+      return { left, right, top }
+    }
+
+    function GutterStrip() {
+      const [layout, setLayout] = useLayoutState()
+      const all = useRegistry()
+      const [anchors, setAnchors] = React.useState(() => measureAnchors())
+      React.useEffect(() => {
+        let raf = 0
+        const sync = () => { raf = 0; setAnchors(measureAnchors()) }
+        const schedule = () => { if (!raf) raf = requestAnimationFrame(sync) }
+        window.addEventListener('resize', schedule)
+        const timer = setInterval(schedule, 700)
+        return () => { window.removeEventListener('resize', schedule); clearInterval(timer); if (raf) cancelAnimationFrame(raf) }
+      }, [])
+      if (readMode() !== 'gutter' || layout.open !== true) return null
+      if (!anchors || anchors.left === null) return null
+      const sideOf = (panel) => core.effectiveSide(layout, panel.id, panel.side)
+      const rightPanels = all.filter((panel) => sideOf(panel) === 'right')
+      if (rightPanels.length === 0) return null
+      const style = {
+        position: 'fixed',
+        top: (anchors ? anchors.top : 6),
+        bottom: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        minWidth: 0,
+        boxSizing: 'border-box',
+        pointerEvents: 'auto',
+        zIndex: 30,
+      }
+      if (anchors && anchors.left !== null) style.left = anchors.left
+      if (anchors && anchors.right !== null) style.right = Math.max(6, window.innerWidth - anchors.right)
+      if (!style.left && !style.right) { style.right = 8 }
+      if (!style.left) { style.width = core.clampWidth(layout.width) }
+      return h('div', { 'data-panel-dock-strip': '', 'data-panel-dock-mode': 'gutter', style }, rightPanels.map((panel) => renderPanel(panel, layout, setLayout)))
+    }
+
     function LeftDock() {
       const registered = useRegistry()
       const [layout, setLayout] = React.useState(readLayout)
@@ -331,7 +411,10 @@ window.__ModuleLoader__.load({
       if (leftPanels.length === 0) return null
       return h('div', {
         'data-panel-dock-left': '',
-        style: { display: 'flex', flexDirection: 'column', gap: 6, width: '100%', minWidth: 0 },
+        // The host footer is a nowrap flex row; a default flex item shrinks to zero
+        // there. Claim the whole row width and refuse to shrink so the stack keeps
+        // the sidebar width instead of collapsing to a sliver.
+        style: { display: 'flex', flexDirection: 'column', gap: 6, flex: '0 0 100%', width: '100%', minWidth: 0, boxSizing: 'border-box' },
       }, leftPanels.map((panel) => {
         const collapsed = core.isCollapsed(layout, panel.id)
         if (collapsed) {
@@ -368,6 +451,9 @@ window.__ModuleLoader__.load({
       const shouldOpen = resolved === 'right' || anyRight
       const nextLayout = Object.assign({}, layout, { open: shouldOpen })
       if (layout.open !== shouldOpen) writeLayout(nextLayout)
+      // Only the takeover mode owns the conversation slot; gutter mode keeps the
+      // shipped conversation and never selects this plugin's main panel.
+      if (readMode() !== 'takeover') return
       try {
         const active = ctx.layout.panelInfo.getSnapshot().activePanelId
         if (shouldOpen && active !== KEY) ctx.layout.selectPanel(KEY)
@@ -386,8 +472,22 @@ window.__ModuleLoader__.load({
         version: 1,
         define,
         panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order })),
-        open: () => { try { ctx.layout.selectPanel(KEY) } catch {} },
-        close: () => { try { ctx.layout.selectPanel(null) } catch {} },
+        open: () => {
+          setOpen(true)
+          if (readMode() === 'takeover') { try { ctx.layout.selectPanel(KEY) } catch {} }
+        },
+        getMode: () => readMode(),
+        setMode: (mode) => {
+          writeMode(mode)
+          if (mode === 'takeover' && isOpen()) { try { ctx.layout.selectPanel(KEY) } catch {} }
+          if (mode === 'gutter') { try { ctx.layout.selectPanel(null) } catch {} }
+          emit()
+          return readMode()
+        },
+        close: () => {
+          setOpen(false)
+          try { ctx.layout.selectPanel(null) } catch {}
+        },
         isOpen: () => { try { return ctx.layout.panelInfo.getSnapshot().activePanelId === KEY } catch { return false } },
         getWidth: () => readLayout().width,
         setWidth: (width) => { const next = core.cloneLayout(readLayout()); next.width = core.clampWidth(width); writeLayout(next); emit(); return next.width },
@@ -451,18 +551,30 @@ window.__ModuleLoader__.load({
           if (attempts > 60) return
           const layout = readLayout()
           const hasRight = panels().some((panel) => core.effectiveSide(layout, panel.id, panel.side) === 'right')
-          if (layout.open === true && hasRight) {
+          if (layout.open === true && hasRight && readMode() === 'takeover') {
             try {
               const active = ctx.layout.panelInfo.getSnapshot().activePanelId
               if (active !== KEY) ctx.layout.selectPanel(KEY)
               return
             } catch {}
           }
+          if (readMode() === 'gutter') return
           timer = setTimeout(tick, 500)
         }
         timer = setTimeout(tick, 500)
         return () => { if (timer) clearTimeout(timer) }
       }, 'panel-dock: restore open state')
+      // A previous takeover leaves this plugin as the active main panel; in gutter
+      // mode the shipped conversation must own that slot, so clear it explicitly.
+      if (readMode() === 'gutter') {
+        setTimeout(() => {
+          try {
+            const info = ctx.layout.panelInfo.getSnapshot()
+            if (info && info.activePanelId === KEY) ctx.layout.selectPanel(null)
+          } catch {}
+        }, 300)
+      }
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: KEY + '-gutter', order: 40, locale: NS }, GutterStrip))
       ctx.slots.inject('main', function* () {
         yield ctx.slots.register({ name: 'main', key: KEY, locale: NS, children: { [VIEW_SLOT]: { kind: 'single', scope: 'session' } } }, Stage)
       })
