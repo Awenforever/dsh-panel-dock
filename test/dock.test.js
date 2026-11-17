@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clampWidth, heightStyle, normalizePanels, parseLayout, serializeLayout, isCollapsed, toggleCollapsed, effectiveStripWidth, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH, MIN_CONVERSATION, SPLITTER_WIDTH } from '../dock-core.js'
+import { clampWidth, heightStyle, normalizePanels, parseLayout, serializeLayout, isCollapsed, toggleCollapsed, effectiveStripWidth, effectiveSide, withSide, otherSide, DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH, MIN_CONVERSATION, SPLITTER_WIDTH } from '../dock-core.js'
 
 test('clampWidth keeps sane values and rejects junk', () => {
   assert.equal(clampWidth(320), 320)
@@ -31,20 +31,20 @@ test('normalizePanels sorts by order then id and tolerates junk', () => {
 })
 
 test('parseLayout falls back to defaults on junk', () => {
-  assert.deepEqual(parseLayout(''), { width: DEFAULT_WIDTH, collapsed: {} })
-  assert.deepEqual(parseLayout('not json'), { width: DEFAULT_WIDTH, collapsed: {} })
-  assert.deepEqual(parseLayout('null'), { width: DEFAULT_WIDTH, collapsed: {} })
-  assert.deepEqual(parseLayout(JSON.stringify({ width: 10 })), { width: MIN_WIDTH, collapsed: {} })
-  assert.deepEqual(parseLayout(JSON.stringify({ width: 440, collapsed: { a: true, b: 1 } })), { width: 440, collapsed: { a: true, b: false } })
+  assert.deepEqual(parseLayout(''), { width: DEFAULT_WIDTH, collapsed: {}, sides: {} })
+  assert.deepEqual(parseLayout('not json'), { width: DEFAULT_WIDTH, collapsed: {}, sides: {} })
+  assert.deepEqual(parseLayout('null'), { width: DEFAULT_WIDTH, collapsed: {}, sides: {} })
+  assert.deepEqual(parseLayout(JSON.stringify({ width: 10 })), { width: MIN_WIDTH, collapsed: {}, sides: {} })
+  assert.deepEqual(parseLayout(JSON.stringify({ width: 440, collapsed: { a: true, b: 1 }, sides: { x: 'left', y: 'up' } })), { width: 440, collapsed: { a: true, b: false }, sides: { x: 'left' } })
 })
 
 test('serialize then parse round-trips', () => {
-  const layout = { width: 440, collapsed: { alpha: true } }
+  const layout = { width: 440, collapsed: { alpha: true }, sides: { alpha: 'left' } }
   assert.deepEqual(parseLayout(serializeLayout(layout)), layout)
 })
 
 test('collapse helpers are pure', () => {
-  const layout = { width: 300, collapsed: {} }
+  const layout = { width: 300, collapsed: {}, sides: {} }
   const toggled = toggleCollapsed(layout, 'alpha')
   assert.equal(isCollapsed(toggled, 'alpha'), true)
   assert.equal(isCollapsed(layout, 'alpha'), false)
@@ -62,4 +62,17 @@ test('effectiveStripWidth keeps the conversation floor', () => {
   // junk stage width falls back to the preference
   assert.equal(effectiveStripWidth(0, 300), 300)
   assert.equal(effectiveStripWidth(undefined, 300), 300)
+})
+
+test('side preference: default, override and toggle', () => {
+  const empty = { width: 320, collapsed: {}, sides: {} }
+  assert.equal(effectiveSide(empty, 'a', 'right'), 'right')
+  assert.equal(effectiveSide(empty, 'a', 'left'), 'left')
+  const moved = withSide(empty, 'a', 'left')
+  assert.equal(effectiveSide(moved, 'a', 'right'), 'left')
+  assert.equal(effectiveSide(empty, 'a', 'right'), 'right', '原 layout 不被修改')
+  const back = withSide(moved, 'a', 'right')
+  assert.equal(effectiveSide(back, 'a', 'left'), 'right')
+  assert.equal(otherSide('left'), 'right')
+  assert.equal(otherSide('right'), 'left')
 })

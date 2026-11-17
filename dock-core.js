@@ -30,7 +30,7 @@ export function normalizePanels(panels) {
 }
 
 export function defaultLayout() {
-  return { width: DEFAULT_WIDTH, collapsed: {} }
+  return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} }
 }
 
 export function parseLayout(raw) {
@@ -42,11 +42,22 @@ export function parseLayout(raw) {
   if (parsed.collapsed && typeof parsed.collapsed === 'object') {
     for (const key of Object.keys(parsed.collapsed)) collapsed[key] = parsed.collapsed[key] === true
   }
-  return { width: clampWidth(parsed.width), collapsed }
+  const sides = {}
+  if (parsed.sides && typeof parsed.sides === 'object') {
+    for (const key of Object.keys(parsed.sides)) {
+      const value = parsed.sides[key]
+      if (value === 'left' || value === 'right') sides[key] = value
+    }
+  }
+  return { width: clampWidth(parsed.width), collapsed, sides }
 }
 
 export function serializeLayout(layout) {
-  return JSON.stringify({ width: clampWidth(layout && layout.width), collapsed: Object.assign({}, (layout && layout.collapsed) || {}) })
+  return JSON.stringify({
+    width: clampWidth(layout && layout.width),
+    collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
+    sides: Object.assign({}, (layout && layout.sides) || {}),
+  })
 }
 
 export function isCollapsed(layout, id) {
@@ -71,4 +82,27 @@ export function effectiveStripWidth(stageWidth, preferred, splitter = SPLITTER_W
   const affordable = Math.floor(stage - MIN_CONVERSATION - splitter)
   const capped = Math.min(clampWidth(preferred), affordable)
   return Math.max(MIN_WIDTH, capped)
+}
+
+// Where a panel currently lives. The panel definition supplies the default; the
+// layout remembers the user choice made through the panel own toggle button.
+export function effectiveSide(layout, id, fallback = 'right') {
+  const stored = layout && layout.sides ? layout.sides[id] : undefined
+  if (stored === 'left' || stored === 'right') return stored
+  return fallback === 'left' ? 'left' : 'right'
+}
+
+export function withSide(layout, id, side) {
+  const next = {
+    width: clampWidth(layout && layout.width),
+    collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
+    sides: Object.assign({}, (layout && layout.sides) || {}),
+  }
+  if (side === 'left' || side === 'right') next.sides[id] = side
+  else delete next.sides[id]
+  return next
+}
+
+export function otherSide(side) {
+  return side === 'left' ? 'right' : 'left'
 }

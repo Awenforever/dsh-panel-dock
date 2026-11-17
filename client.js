@@ -37,20 +37,31 @@ window.__ModuleLoader__.load({
           return String(a.id).localeCompare(String(b.id))
         })
       },
-      defaultLayout() { return { width: DEFAULT_WIDTH, collapsed: {} } },
+      defaultLayout() { return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} } },
       parseLayout(raw) {
-        if (typeof raw !== 'string' || raw === '') return { width: DEFAULT_WIDTH, collapsed: {} }
+        if (typeof raw !== 'string' || raw === '') return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} }
         let parsed = null
-        try { parsed = JSON.parse(raw) } catch { return { width: DEFAULT_WIDTH, collapsed: {} } }
-        if (!parsed || typeof parsed !== 'object') return { width: DEFAULT_WIDTH, collapsed: {} }
+        try { parsed = JSON.parse(raw) } catch { return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} } }
+        if (!parsed || typeof parsed !== 'object') return { width: DEFAULT_WIDTH, collapsed: {}, sides: {} }
         const collapsed = {}
         if (parsed.collapsed && typeof parsed.collapsed === 'object') {
           for (const key of Object.keys(parsed.collapsed)) collapsed[key] = parsed.collapsed[key] === true
         }
-        return { width: core.clampWidth(parsed.width), collapsed }
+        const sides = {}
+        if (parsed.sides && typeof parsed.sides === 'object') {
+          for (const key of Object.keys(parsed.sides)) {
+            const value = parsed.sides[key]
+            if (value === 'left' || value === 'right') sides[key] = value
+          }
+        }
+        return { width: core.clampWidth(parsed.width), collapsed, sides }
       },
       serializeLayout(layout) {
-        return JSON.stringify({ width: core.clampWidth(layout && layout.width), collapsed: Object.assign({}, (layout && layout.collapsed) || {}) })
+        return JSON.stringify({
+          width: core.clampWidth(layout && layout.width),
+          collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
+          sides: Object.assign({}, (layout && layout.sides) || {}),
+        })
       },
       isCollapsed(layout, id) { return Boolean(layout && layout.collapsed && layout.collapsed[id] === true) },
       effectiveStripWidth(stageWidth, preferred, splitter) {
@@ -60,6 +71,22 @@ window.__ModuleLoader__.load({
         const capped = Math.min(core.clampWidth(preferred), affordable)
         return Math.max(MIN_WIDTH, capped)
       },
+      effectiveSide(layout, id, fallback) {
+        const stored = layout && layout.sides ? layout.sides[id] : undefined
+        if (stored === 'left' || stored === 'right') return stored
+        return fallback === 'left' ? 'left' : 'right'
+      },
+      withSide(layout, id, side) {
+        const next = {
+          width: core.clampWidth(layout && layout.width),
+          collapsed: Object.assign({}, (layout && layout.collapsed) || {}),
+          sides: Object.assign({}, (layout && layout.sides) || {}),
+        }
+        if (side === 'left' || side === 'right') next.sides[id] = side
+        else delete next.sides[id]
+        return next
+      },
+      otherSide(side) { return side === 'left' ? 'right' : 'left' },
       toggleCollapsed(layout, id) {
         const next = { width: core.clampWidth(layout && layout.width), collapsed: Object.assign({}, (layout && layout.collapsed) || {}) }
         next.collapsed[id] = next.collapsed[id] !== true
@@ -169,7 +196,7 @@ window.__ModuleLoader__.load({
     function Stage(props) {
       const { SessionProvider, renderSlot, useSessions } = props
       const list = useSessions((state) => state)
-      const registered = useRegistry().filter((panel) => panel.side === 'right')
+      const allPanels = useRegistry()
       const sessionId = React.useMemo(() => {
         if (!list || !Array.isArray(list.ids) || list.ids.length === 0) return null
         const retained = list.ids.find((id) => ((list.byId[id] || {}).retainedBy || {}).mainView > 0)
@@ -178,6 +205,7 @@ window.__ModuleLoader__.load({
       const [reference, setReference] = React.useState(null)
       const [failure, setFailure] = React.useState(null)
       const [layout, setLayout] = React.useState(readLayout)
+      const registered = allPanels.filter((panel) => core.effectiveSide(layout, panel.id, panel.side) === 'right')
       const [stageWidth, setStageWidth] = React.useState(0)
       const stageRef = React.useRef(null)
       React.useEffect(() => {
@@ -293,7 +321,7 @@ window.__ModuleLoader__.load({
         listeners.add(sync)
         return () => { listeners.delete(sync) }
       }, [])
-      const leftPanels = registered.filter((panel) => panel.side === 'left' || panel.side === 'auto')
+      const leftPanels = registered.filter((panel) => { const side = core.effectiveSide(layout, panel.id, panel.side); return side === 'left' })
       if (leftPanels.length === 0) return null
       return h('div', {
         'data-panel-dock-left': '',
@@ -345,6 +373,9 @@ window.__ModuleLoader__.load({
         setCollapsed: (id, value) => { const current = readLayout(); const next = { width: current.width, collapsed: Object.assign({}, current.collapsed) }; if (value) next.collapsed[id] = true; else delete next.collapsed[id]; writeLayout(next); emit(); return Boolean(next.collapsed[id]) },
         toggle: (id) => { const current = readLayout(); const next = core.toggleCollapsed(current, id); writeLayout(next); emit(); return Boolean(next.collapsed[id]) },
         getLayout: () => readLayout(),
+        getSide: (id) => { const layout = readLayout(); const panel = registry.get(id); return core.effectiveSide(layout, id, panel ? panel.side : 'right') },
+        setSide: (id, side) => { const next = core.withSide(readLayout(), id, side); writeLayout(next); emit(); return Boolean(side) },
+        toggleSide: (id) => { const layout = readLayout(); const panel = registry.get(id); const current = core.effectiveSide(layout, id, panel ? panel.side : 'right'); const next = core.withSide(layout, id, core.otherSide(current)); writeLayout(next); emit(); return core.effectiveSide(next, id, panel ? panel.side : 'right') },
       }
       try { window.__dshPanelDock = api } catch {}
       try { ctx.effect(() => { const previous = window.__dshPanelDock; return () => { if (window.__dshPanelDock === api) window.__dshPanelDock = undefined } }, 'panel-dock: global') } catch {}
