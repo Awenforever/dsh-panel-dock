@@ -1,0 +1,149 @@
+# HANDOFF — dsh-panel-dock
+
+> 读者：接手本插件的 agent。本文是**当前状态**的唯一入口，写于 2026-11-18（panel-dock 0.3.9）。
+> 历史过程在协作中心 `projects/plugins/dsh-ustc-quota/LOG.md` E78–E89（该仓库正在被另一会话重构，读取时按标题定位）。
+
+## 1. 定位与边界
+
+这是一个**纯槽位协商插件**：别的插件把卡片注册进来，它决定卡片渲染在左侧栏还是右侧带。
+
+- **不做**：导航项、按钮、弹窗、快捷键、开关。用户在界面上能看到的每个交互都属于卡片自己。
+- **不做**：接管 `main` 槽位（takeover 方案已删除，详见 §6）。
+- **不做**：自造间距、改卡片配色/阴影形状。
+
+## 2. 硬事实
+
+| 项 | 值 |
+|---|---|
+| 仓库 | `github.com/Awenforever/dsh-panel-dock` |
+| 版本 | `0.3.9` |
+| npm | **未发布** |
+| 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
+| 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
+| 持久化 | `localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" \| "right" } }` |
+| 注册表 | `window.__dshPanelDockRegistry`（Map，跨热更新存活） |
+| 监听器 | `window.__dshPanelDockListeners`（Set） |
+
+`client.js` 是唯一运行时代码；`dock-core.js` 只服务单元测试（client 模块加载器不支持相对 require，核心逻辑在 client.js 内联了一份）。
+
+## 3. 公开 API（消费者唯一契约）
+
+```js
+window.__dshPanelDock = {
+  version,                 // 字符串
+  define(definition),      // 返回 dispose()
+  panels(),                // [{ id, title, order, side }]
+  getSide(id),             // 'left' | 'right'
+  setSide(id, side),       // 返回最终 side
+  toggleSide(id),          // 返回新 side
+  subscribe(listener),     // 返回 unsubscribe
+}
+```
+
+`define({ id, title, order, side, height, component })`：`id` 非空、`component` 必须是函数；同 id 重复注册会覆盖。
+`order` 目前**不参与排序**——堆叠顺序是注册先后（先来后到）。
+
+## 4. 面板组件契约
+
+1. 渲染**一个根元素**，把收到的 props 展开到它上面，`style` 放最后：`h('div', Object.assign({}, rest, { style: Object.assign({}, style, {...}) }))`。
+2. **不要**自己定位：无 `position: fixed`、无固定宽高、不要用 margin 对抗父级。
+3. dock 会注入 `style`（`width/minWidth/boxSizing/flex:0 0 auto/order:0/margin:0/pointerEvents:auto`）。卡片自带的外壳（边框/圆角/底色/阴影）保留。
+4. 左侧宿主只提供 `width: 100%`，所以面板必须有**固有高度**。
+
+## 5. 几何规则
+
+### 左侧（sidebar 栈）
+`sidebar.footer.action` 里的 flex column，`gap: 6`、`flex: 0 0 100%`（宿主 footer 是 nowrap flex row，不这么写会塌成几像素）。
+
+### 右侧（对话右侧空白带）
+
+锚点全部实测，来源于宿主自己的布局：
+
+| 边 | 规则 |
+|---|---|
+| 左 | `.widthHandle[data-side="right"]` 的 `right + 6` |
+| 右 | 轮次条按钮最小 `x − 6`，判据 `x > handleRight`（**不要用固定容差**，见 §6） |
+| 上 | `[data-conversation-tabs]` 行 `bottom + 6` |
+| 下 | `8` |
+
+宽度与锚定：
+
+```
+width = min(max(span, 200), 480, anchors.right - 8)   // span = anchors.right - anchors.left
+width > span  → 右锚定（压住对话区，右边界 = 轮次条 − 6，绝不越界）
+其余          → 左锚定（贴正文拖动条）
+```
+
+- `overflow: visible` 是硬要求（滚动容器会把卡片阴影裁成硬边，见 §6）。代价：**面板总高超过列高时不滚动**。
+- 堆叠间距 `gap: 6`，与左侧一致——不要为了「阴影分开」自造更大间距。
+- 没有右侧面板时不渲染条带：不占宽、不拦点击。
+
+## 6. 踩坑清单（症状 → 根因 → 修法）
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| 升级 dock 后所有卡片消失 | 注册表是模块闭包变量，热更新后被重置 | 注册表/监听器挂到 `window` |
+| 右侧卡片阴影是硬边方框 | 条带 `overflow-y:auto`，另一个轴的 `visible` 也会变裁剪 | `overflow: visible` |
+| 两张卡看起来黏成一块 | 曾自造 18px 间距 → 用户否决；真正原因是面板底色与页面色接近 + 阴影填满缝 | 间距回到 6；由卡片侧调**阴影颜色**（不是形状、不是底色） |
+| 发布同版本号后行为没变 | `pnpm install` 认为已是最新，不换包 | 每次发布必须升 `package.json` 版本 |
+| 打包里还是旧版本 | `npm pack` 取 `package.json` 的 version，不是 client.js 常量 | 同步三处：`package.json` / `index.js` / `client.js` |
+| 带被挤没、面板消失 | `span < 200` 时 `return null` | 见 §5 的宽度公式 |
+| 挤窄后反而压住轮次条 | 锚点检测用 `x > left + 40` / `+2` 过滤，带为 0 时轮次条被排除、退回 480 兜底 | 判据改成 `x > handleRight` |
+| 部署后页面仍是旧代码 | 覆盖 `node_modules/<plugin>/client.js`，插件图不变，client-hmr 不换模块 | 走正规安装（§7） |
+
+## 7. 部署纪律
+
+```powershell
+# 1) 打包
+cd <repo>; npm pack --silent
+# 2) 放到本机 vendor
+Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
+# 3) 改 profile spec（只改这一行）
+#    profiles/desktop/package.json -> "dsh-panel-dock": "file:C:/Users/<user>/.dsh/vendor/dsh-panel-dock-<ver>.tgz"
+# 4) 走宿主 CLI 安装（禁手改 cordis.patch.yml / node_modules）
+& "<安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop install
+```
+
+- 打包版**没有**「刷新页面」菜单，也**没有** Ctrl+R；Web UI 热更新由 `dsh-client-hmr` 负责，正常安装后**不需要**让用户刷新或重启。
+- 若 `pnpm` 报 `ERR_PNPM_NO_MATCHING_VERSION` 或 ENOENT：检查 spec 里的用户名/路径（不同机器用户名不同，如 `king` vs `king_`）。
+- 网络抖动会让 GitHub tarball 依赖（如 advisor）失败，重试即可。
+
+## 8. 验证纪律
+
+**断言「用户看到的」必须看真实窗口截图**，不是 DOM 数值。
+
+- 路径 E（真实桌面窗口）：`%USERPROFILE%\.dsh\skills\dsh-real-screenshot\scripts\win-shot.ps1 -ProcessId <pid> -Out <png>`，然后 `read_image` **亲自看**。
+- 路径 F（同一实例 Web UI、真实数据）：`node E:\dsh-recovery\04-kit\dsh-web-shot.mjs <port>`。
+- DOM 度量、拖拽、视口切换：CDP 脚本；颜色/阴影用**像素取样**（`Bitmap.GetPixel`）判定，不要凭印象。
+
+现成脚本（会话工作区 `.scratch/`）：
+
+| 脚本 | 用途 |
+|---|---|
+| `squeeze4.mjs` | 打开真实会话 → 拖宽对话盒子挤掉空白带 → 验证面板仍存在且不越轮次条 |
+| `check-right4.mjs` | 把面板移到右侧、等真数据、2560/1936 双视口测量 + 截图 |
+| `probe-ovf3.mjs` | 卡片横向溢出/裁切度量 |
+| `narrow.mjs` | 纯视口缩放的对照（注意：这不是「挤窄」，见 §5） |
+
+先 VM（`win11-test`，`king@100.108.63.25`，密钥 `~/.ssh/id_tailnet`）验证，再同步 invictus。
+
+## 9. 消费者现状
+
+| 插件 | 版本 | 说明 |
+|---|---|---|
+| `dsh-ustc-quota` | 1.2.6 | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变） |
+| `dsh-codex-advisor` | 0.10.0 | 其 `PANEL_DOCK_SPEC` 仍钉在 `a8c789c`，**需要升到 0.3.9** |
+
+## 10. 未决项
+
+- npm 是否发布（用户尚未批准）。
+- 面板多到超过列高时的滚动策略（当前不滚）。
+- `README.md` 需同步到 0.3.x 现状（模式章节仍在描述已删除的 takeover）。
+
+## 11. 禁止事项
+
+- 不给插件加任何导航项/按钮/开关。
+- 不改卡片配色；阴影只允许按底色调**颜色**，不动偏移与模糊。
+- 不自造堆叠间距（与左侧 6px 一致）。
+- 不重启 invictus 的 DSH（需当窗授权）。
+- 协作中心正在被另一会话重构：本插件相关记录先不写 LOG，只在需要时给指针。
