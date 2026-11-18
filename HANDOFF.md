@@ -16,7 +16,7 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `github.com/Awenforever/dsh-panel-dock` |
-| 版本 | `0.3.9` |
+| 版本 | `0.3.12`（0.3.10–0.3.12 只做溢出滚动，见 §5） |
 | npm | **未发布** |
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
@@ -74,7 +74,8 @@ width > span  → 右锚定（压住对话区，右边界 = 轮次条 − 6，�
 其余          → 左锚定（贴正文拖动条）
 ```
 
-- `overflow: visible` 是硬要求（滚动容器会把卡片阴影裁成硬边，见 §6）。代价：**面板总高超过列高时不滚动**。
+- 不溢出时 `overflow: visible` 是硬要求（滚动容器会把卡片阴影裁成硬边，见 §6）。
+- 溢出时（卡片总高 > 列高）才切成滚动容器，并**按阴影外扩 16px、再用 padding 缩回**：卡片矩形逐像素不变，裁切线落在留白里。见 §6 第一行。
 - 堆叠间距 `gap: 6`，与左侧一致——不要为了「阴影分开」自造更大间距。
 - 没有右侧面板时不渲染条带：不占宽、不拦点击。
 
@@ -89,6 +90,8 @@ width > span  → 右锚定（压住对话区，右边界 = 轮次条 − 6，�
 | 打包里还是旧版本 | `npm pack` 取 `package.json` 的 version，不是 client.js 常量 | 同步三处：`package.json` / `index.js` / `client.js` |
 | 带被挤没、面板消失 | `span < 200` 时 `return null` | 见 §5 的宽度公式 |
 | 挤窄后反而压住轮次条 | 锚点检测用 `x > left + 40` / `+2` 过滤，带为 0 时轮次条被排除、退回 480 兜底 | 判据改成 `x > handleRight` |
+| 面板高于列高时下方卡片不可达 | `overflow: visible` 不滚动 | 溢出时才切滚动容器：按阴影 16px 外扩、同值 padding 缩回，卡片矩形逐像素不变；`scrollbar-width:none` |
+| 溢出判定一直不翻转 | 卡片高度变化（异步数据、样式注入）不触发 dock 重渲染 | `ResizeObserver` 盯每张卡 + 700ms 锚点 tick 兜底（窗口被最小化时节流会让 RO 延迟数秒） |
 | 部署后页面仍是旧代码 | 覆盖 `node_modules/<plugin>/client.js`，插件图不变，client-hmr 不换模块 | 走正规安装（§7） |
 
 ## 7. 部署纪律
@@ -107,6 +110,7 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 - 打包版**没有**「刷新页面」菜单，也**没有** Ctrl+R；Web UI 热更新由 `dsh-client-hmr` 负责，正常安装后**不需要**让用户刷新或重启。
 - 若 `pnpm` 报 `ERR_PNPM_NO_MATCHING_VERSION` 或 ENOENT：检查 spec 里的用户名/路径（不同机器用户名不同，如 `king` vs `king_`）。
 - 网络抖动会让 GitHub tarball 依赖（如 advisor）失败，重试即可。
+- 在沙箱会话里 `npm pack` 会因 `~/AppData/Local/npm-cache` 越界报 `EPERM`：加 `--cache <工作区内路径>` 即可。
 
 ## 8. 验证纪律
 
@@ -125,6 +129,9 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 | `probe-ovf3.mjs` | 卡片横向溢出/裁切度量 |
 | `narrow.mjs` | 纯视口缩放的对照（注意：这不是「挤窄」，见 §5） |
 
+- 同一实例的**桌面 app**：VM 上的 DSH 以 `--remote-debugging-port=9222` 启动，直连 `dsh-app://app/` 这个 target 即可（**不需要**伪造 auth cookie，也别选 `welcome.html`）。窗口被最小化/后台时会节流（RO 与 rAF 延迟数秒、`Input.dispatchMouseEvent` 超时），先 `Emulation.setFocusEmulationEnabled` + `Page.setWebLifecycleState: active`。
+- 单元测试在沙箱里用 `node --test` 会 `spawn EPERM`（runner 要起子进程）：直接 `node test/dock.test.js`。
+
 先 VM（`win11-test`，`king@100.108.63.25`，密钥 `~/.ssh/id_tailnet`）验证，再同步 invictus。
 
 ## 9. 消费者现状
@@ -132,13 +139,13 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 | 插件 | 版本 | 说明 |
 |---|---|---|
 | `dsh-ustc-quota` | 1.2.6 | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变） |
-| `dsh-codex-advisor` | 0.10.0 | 其 `PANEL_DOCK_SPEC` 仍钉在 `a8c789c`，**需要升到 0.3.9** |
+| `dsh-codex-advisor` | 0.10.0 | `PANEL_DOCK_SPEC` 钉的是 `a8c789c` = panel-dock **0.1.0（takeover 时代，`inject('main')`）**：用户点它的「安装 panel-dock」会把已装新版**降级**回接管 main。归属会话 `session-3e48f83b`（DSH-Codex-Advisor），计划 0.10.1 改钉 tag `v0.3.12` 并加「不降级」守卫。它发版前**不要**用那个按钮。 |
 
 ## 10. 未决项
 
-- npm 是否发布（用户尚未批准）。
-- 面板多到超过列高时的滚动策略（当前不滚）。
-- `README.md` 需同步到 0.3.x 现状（模式章节仍在描述已删除的 takeover）。
+- npm 是否发布（用户尚未批准）。仓库目前没有任何 tag，`v0.3.12` 是第一个。
+- `dock-core.js` + `test/dock.test.js` 仍在测**已删除**的模型（width / collapse / open / height 模式 / order 排序）：10/10 绿但不覆盖任何现役几何。要么删、要么按现役逻辑（side 解析 + 带宽公式）重写，待用户定。
+- 左侧栈溢出未验证（宿主 sidebar 自身是否滚动）——右侧已解决，左侧未测。
 
 ## 11. 禁止事项
 

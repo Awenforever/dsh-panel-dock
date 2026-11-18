@@ -1,0 +1,4 @@
+# Build artefacts: npm pack writes these next to the sources. They are inputs to the
+# host plugin install (§7 of HANDOFF.md), never part of the repository.
+*.tgz
+node_modules/

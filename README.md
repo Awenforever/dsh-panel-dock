@@ -91,9 +91,13 @@ for the conversation.
    stack gap, nothing more: `order` and `height` in a definition are accepted for compatibility but
    have no layout effect in 0.3.x.
 
-The band is `overflow: visible` on purpose: any scroll container turns a card's box-shadow into a
-hard-edged rectangle, so the band refuses to scroll. Consequence: **panels taller than the column do
-not scroll** (open item).
+A stack that fits stays a plain, non-clipping column: cards may draw outside their own box (their
+shadow). Only when the cards are **taller than the column** does the band become a scroll container,
+and then it grows by the shadow's reach (16px) and pads the same amount back — every card keeps the
+exact rectangle it had, and the scrollport's clip line lands in the gutter instead of across a
+shadow. Scrolling is wheel/trackpad only: no scrollbar is drawn, because a bar in the gutter would
+sit beside the cards as a foreign affordance. While scrolling, a card is cut at the gutter edge,
+16px outside the band.
 
 ## Readiness
 
@@ -129,7 +133,7 @@ old copy.
 
 ## Status
 
-`0.3.9`. In use by `dsh-ustc-quota` 1.2.6 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.3.12`. In use by `dsh-ustc-quota` 1.2.6 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License

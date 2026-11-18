@@ -8,11 +8,15 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.9'
+    const VERSION = '0.3.12'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
     const STACK_GAP = GAP
+    // Cards own their shadow, and a scroll container clips at its padding box. So the
+    // band only becomes a scroll container when the cards no longer fit the column,
+    // and then it grows by the shadow's reach and pads the same amount back.
+    const SHADOW_GUTTER = 16
     // A panel narrower than this stops being readable; the gutter keeps this floor
     // and lets its left edge sit over the transcript margin instead.
     const MIN_PANEL_WIDTH = 200
@@ -184,13 +188,38 @@ window.__ModuleLoader__.load({
       return { left, right, top }
     }
 
+    function sameAnchors(a, b) {
+      if (!a || !b) return a === b
+      return a.left === b.left && a.right === b.right && a.top === b.top
+    }
+
+    // What the cards want, gap included.
+    function stackedHeight(el) {
+      const kids = [...el.children]
+      let total = 0
+      for (const kid of kids) total += kid.getBoundingClientRect().height
+      return total + STACK_GAP * Math.max(0, kids.length - 1)
+    }
+
     function RightHost() {
       const all = useRegistry()
       const [anchors, setAnchors] = React.useState(() => measureAnchors())
+      const [scrolls, setScrolls] = React.useState(false)
+      const stack = React.useRef(null)
+      const measureStack = React.useRef(() => {})
 
       React.useEffect(() => {
         let raf = 0
-        const sync = () => { raf = 0; setAnchors(measureAnchors()) }
+        const sync = () => {
+          raf = 0
+          const next = measureAnchors()
+          // measureAnchors() builds a fresh object on every tick; keep the previous one
+          // while nothing moved, otherwise every card re-renders four times a second.
+          setAnchors((prev) => (sameAnchors(prev, next) ? prev : next))
+          // The tick also re-checks the stack: a minimised or occluded window holds
+          // ResizeObserver notifications back far longer than the user can see.
+          measureStack.current()
+        }
         const schedule = () => { if (!raf) raf = requestAnimationFrame(sync) }
         window.addEventListener('resize', schedule)
         const timer = setInterval(schedule, 700)
@@ -202,6 +231,28 @@ window.__ModuleLoader__.load({
       }, [])
 
       const items = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
+      const top = anchors ? anchors.top : 8
+
+      // A stack that fits stays a plain, non-clipping column, because a card may draw
+      // outside its own box (its shadow). Scroll only when the cards exceed the column.
+      // Cards reach their real height asynchronously (data arrives after mount), and
+      // that never re-renders the dock -- so watch the cards themselves.
+      React.useEffect(() => {
+        const el = stack.current
+        const measure = () => {
+          if (!el) { setScrolls(false); return }
+          const column = Math.max(0, window.innerHeight - 8 - top)
+          const next = stackedHeight(el) > column + 0.5
+          setScrolls((prev) => (prev === next ? prev : next))
+        }
+        measureStack.current = measure
+        measure()
+        if (!el || typeof ResizeObserver === 'undefined') return undefined
+        const observer = new ResizeObserver(measure)
+        for (const kid of el.children) observer.observe(kid)
+        return () => { observer.disconnect(); measureStack.current = () => {} }
+      }, [items.length, top])
+
       // An empty column must cost nothing: no panels, no strip, no reserved width.
       if (items.length === 0) return null
 
@@ -216,7 +267,7 @@ window.__ModuleLoader__.load({
 
       const style = {
         position: 'fixed',
-        top: anchored ? anchors.top : 8,
+        top,
         bottom: 8,
         display: 'flex',
         flexDirection: 'column',
@@ -241,7 +292,32 @@ window.__ModuleLoader__.load({
       } else {
         style.right = 8
       }
-      return h('div', { 'data-panel-dock-strip': '', style }, items.map(renderPanel))
+
+      if (scrolls) {
+        // Grow the box by the shadow's reach, pad the same amount back, and only then
+        // scroll. Every card keeps the exact rectangle it had; the scrollport's clip
+        // line lands in the gutter instead of across a card's shadow.
+        const gutter = SHADOW_GUTTER
+        style.top = top - gutter
+        style.height = Math.max(0, window.innerHeight - 8 - top) + gutter * 2
+        style.bottom = 'auto'
+        style.width = width + gutter * 2
+        if (style.left !== undefined) style.left -= gutter
+        if (style.right !== undefined) style.right -= gutter
+        style.padding = gutter
+        style.overflowY = 'auto'
+        style.overflowX = 'hidden'
+        // No scrollbar: it would sit in the gutter as a foreign affordance, and a
+        // classic scrollbar would also narrow every card by its own width.
+        style.scrollbarWidth = 'none'
+      }
+
+      return h('div', {
+        'data-panel-dock-strip': '',
+        'data-panel-dock-scrolls': scrolls ? '' : undefined,
+        ref: stack,
+        style,
+      }, items.map(renderPanel))
     }
 
     function apply(ctx) {
