@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.13'
+    const VERSION = '0.3.15'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -166,6 +166,7 @@ window.__ModuleLoader__.load({
       let top = 8
       let handleRight = null
       let handleLeft = null
+      let areaRight = null
       try {
         const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
           .find((el) => el.getAttribute('data-side') === 'right')
@@ -185,16 +186,29 @@ window.__ModuleLoader__.load({
           // Everything to the right of the handle belongs to the rail side; a squeezed
           // band can leave the rail a single pixel right of the handle.
           .filter((x) => handleRight === null || x > handleRight)
-        if (railXs.length) right = Math.round(Math.min(...railXs)) - GAP
+        const rail = railColumn(railXs)
+        if (rail !== null) right = rail - GAP
         const tabs = document.querySelector('[data-conversation-tabs]')
-        if (tabs) top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
+        if (tabs) {
+          top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
+          // The right sidebar (开始 / 终端 / 浏览器) owns the window's right side. The band
+          // belongs to the conversation area, so walk up from the tabs and take the
+          // nearest ancestor that stops short of the window: that edge is the hard limit.
+          let node = tabs.parentElement
+          while (node && node !== document.body) {
+            const rect = box(node)
+            if (rect.width > 0 && rect.right < window.innerWidth - 2) { areaRight = Math.round(rect.right); break }
+            node = node.parentElement
+          }
+        }
       } catch {}
-      return { left, right, top, handleLeft }
+      return { left, right, top, handleLeft, areaRight }
     }
 
     function sameAnchors(a, b) {
       if (!a || !b) return a === b
-      return a.left === b.left && a.right === b.right && a.top === b.top && a.handleLeft === b.handleLeft
+      return a.left === b.left && a.right === b.right && a.top === b.top
+        && a.handleLeft === b.handleLeft && a.areaRight === b.areaRight
     }
 
     // What the cards want, gap included.
@@ -203,6 +217,23 @@ window.__ModuleLoader__.load({
       let total = 0
       for (const kid of kids) total += kid.getBoundingClientRect().height
       return total + STACK_GAP * Math.max(0, kids.length - 1)
+    }
+
+    // The turn rail is a *column*: dozens of marks share one x. Message-level actions
+    // ("跳转到该消息", ...) match the same words but stand alone, and one of them sitting
+    // left of the rail used to drag the whole band left with it -- cards then rendered
+    // at the 200px floor while their real whitespace stayed empty. Pick the column.
+    function railColumn(xs) {
+      if (!xs.length) return null
+      const groups = []
+      for (const x of xs) {
+        const group = groups.find((g) => Math.abs(g.x - x) <= 2)
+        if (group) { group.count += 1 } else groups.push({ x, count: 1 })
+      }
+      const columns = groups.filter((g) => g.count >= 4).sort((a, b) => (b.count - a.count) || (a.x - b.x))
+      if (columns.length) return columns[0].x
+      // A short conversation can have a single mark; fall back to the old rule.
+      return Math.min(...xs)
     }
 
     function RightHost() {
@@ -262,12 +293,17 @@ window.__ModuleLoader__.load({
 
       const anchored = anchors && anchors.left !== null && anchors.right !== null
       const span = anchored ? anchors.right - anchors.left : 0
+      // The band may never leave the conversation area: with the right sidebar open
+      // (开始 / 终端 / 浏览器) the window's right edge belongs to that panel, and a card
+      // drawn there covers a foreign surface.
+      const areaEdge = Math.min(window.innerWidth, anchors && anchors.areaRight ? anchors.areaRight : window.innerWidth)
+      const bandRight = Math.min(anchored ? anchors.right : areaEdge - GAP, areaEdge - GAP)
       // A wide conversation squeezes the band away. The panel keeps a usable width by
       // growing leftwards over the transcript instead of vanishing; the turn rail stays
       // clear, so the right edge never moves past it.
       const width = anchored
-        ? Math.min(Math.max(span, MIN_PANEL_WIDTH), MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, anchors.right - 8))
-        : MAX_PANEL_WIDTH
+        ? Math.min(Math.max(span, MIN_PANEL_WIDTH), MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, bandRight - 8))
+        : Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, areaEdge - GAP * 2))
 
       const style = {
         position: 'fixed',
@@ -289,16 +325,16 @@ window.__ModuleLoader__.load({
         if (width > span + 0.5) {
           // Squeezed: let the card cover the transcript edge, but stop at the splitter
           // -- covering it would leave no visible way to widen the conversation back.
-          const edge = anchors.handleLeft !== null && anchors.handleLeft !== undefined
+          const edge = Math.min(anchors.handleLeft !== null && anchors.handleLeft !== undefined
             ? anchors.handleLeft - GAP
-            : anchors.right
+            : bandRight, bandRight)
           style.right = Math.max(GAP, window.innerWidth - edge)
         } else {
           // Roomy: follow the transcript handle, leaving the surplus band near the rail.
           style.left = anchors.left
         }
       } else {
-        style.right = 8
+        style.right = Math.max(8, window.innerWidth - bandRight)
       }
 
       if (scrolls) {

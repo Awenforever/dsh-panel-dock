@@ -78,7 +78,8 @@ otherwise     → pinned to the handle
 ```
 
 The band is `pointer-events: none` and cards re-enable their own; it never swallows a click meant
-for the conversation.
+for the conversation. With the right sidebar (开始 / terminal / browser) open, the band is clamped to
+the conversation area's right edge — it never draws on that panel.
 
 ## Panel component contract
 
@@ -134,7 +135,7 @@ old copy.
 
 ## Status
 
-`0.3.13`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.3.15`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License
