@@ -21,6 +21,7 @@
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
 | 持久化 | `localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" \| "right" } }` |
+| 已部署 | invictus（`dsh plugin list` 实测 0.3.12）/ VM win11-test 0.3.12 |
 | 注册表 | `window.__dshPanelDockRegistry`（Map，跨热更新存活） |
 | 监听器 | `window.__dshPanelDockListeners`（Set） |
 
@@ -138,7 +139,7 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 
 | 插件 | 版本 | 说明 |
 |---|---|---|
-| `dsh-ustc-quota` | 1.2.6 | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变） |
+| `dsh-ustc-quota` | 1.2.7 | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变） |
 | `dsh-codex-advisor` | 0.10.0 | `PANEL_DOCK_SPEC` 钉的是 `a8c789c` = panel-dock **0.1.0（takeover 时代，`inject('main')`）**：用户点它的「安装 panel-dock」会把已装新版**降级**回接管 main。归属会话 `session-3e48f83b`（DSH-Codex-Advisor），计划 0.10.1 改钉 tag `v0.3.12` 并加「不降级」守卫。它发版前**不要**用那个按钮。 |
 
 ## 10. 未决项

@@ -133,7 +133,7 @@ old copy.
 
 ## Status
 
-`0.3.12`. In use by `dsh-ustc-quota` 1.2.6 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.3.12`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License
