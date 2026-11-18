@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.6'
+    const VERSION = '0.3.9'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -160,14 +160,23 @@ window.__ModuleLoader__.load({
       let left = null
       let right = null
       let top = 8
+      let handleRight = null
       try {
         const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
           .find((el) => el.getAttribute('data-side') === 'right')
-        if (handle) left = Math.round(box(handle).right) + GAP
+        if (handle) {
+          handleRight = Math.round(box(handle).right)
+          left = handleRight + GAP
+        }
+        // The turn rail sits to the right of the band; other turn-navigation buttons live
+        // on its left edge. Keep the smallest x that is still right of the handle -- a wide
+        // conversation can leave only a few pixels, so the tolerance has to stay small.
         const railXs = [...document.querySelectorAll('button[aria-label]')]
           .filter((el) => /turnNavigation|轮次|跳转/i.test(el.getAttribute('aria-label') || ''))
           .map((el) => Math.round(box(el).left))
-          .filter((x) => left === null || x > left + 40)
+          // Everything to the right of the handle belongs to the rail side; a squeezed
+          // band can leave the rail a single pixel right of the handle.
+          .filter((x) => handleRight === null || x > handleRight)
         if (railXs.length) right = Math.round(Math.min(...railXs)) - GAP
         const tabs = document.querySelector('[data-conversation-tabs]')
         if (tabs) top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
@@ -198,8 +207,12 @@ window.__ModuleLoader__.load({
 
       const anchored = anchors && anchors.left !== null && anchors.right !== null
       const span = anchored ? anchors.right - anchors.left : 0
-      if (anchored && span < MIN_PANEL_WIDTH) return null
-      const width = anchored ? Math.min(span, MAX_PANEL_WIDTH) : MAX_PANEL_WIDTH
+      // A wide conversation squeezes the band away. The panel keeps a usable width by
+      // growing leftwards over the transcript instead of vanishing; the turn rail stays
+      // clear, so the right edge never moves past it.
+      const width = anchored
+        ? Math.min(Math.max(span, MIN_PANEL_WIDTH), MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, anchors.right - 8))
+        : MAX_PANEL_WIDTH
 
       const style = {
         position: 'fixed',
@@ -218,9 +231,13 @@ window.__ModuleLoader__.load({
       }
       style.width = width
       if (anchored) {
-        // Anchor to the transcript handle, not to the turn rail: the card follows the
-        // conversation edge and the surplus band stays empty on the rail side.
-        style.left = anchors.left
+        if (width > span + 0.5) {
+          // Squeezed: pin to the rail side and let the card cover the transcript edge.
+          style.right = Math.max(GAP, window.innerWidth - anchors.right)
+        } else {
+          // Roomy: follow the transcript handle, leaving the surplus band near the rail.
+          style.left = anchors.left
+        }
       } else {
         style.right = 8
       }
