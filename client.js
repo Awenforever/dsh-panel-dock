@@ -133,8 +133,8 @@ window.__ModuleLoader__.load({
     const registry = new Map()
     const listeners = new Set()
 
-    const zh = { panel: '面板坞', empty: '暂无面板', collapse: '收起', expand: '展开' }
-    const en = { panel: 'Panel dock', empty: 'No panels yet', collapse: 'Collapse', expand: 'Expand' }
+    const zh = { panel: '面板坞', empty: '暂无面板', emptyHint: '用面板上的图标把面板移到这里', collapse: '收起', expand: '展开' }
+    const en = { panel: 'Panel dock', empty: 'No panels yet', emptyHint: 'Use a panel icon to move it here', collapse: 'Collapse', expand: 'Expand' }
     let T = (k) => k
 
     function emit() { for (const fn of listeners) { try { fn() } catch {} } }
@@ -418,10 +418,11 @@ window.__ModuleLoader__.load({
         style.right = 8
         style.width = core.clampWidth(layout.width)
       }
-      return h('div', { 'data-panel-dock-strip': '', 'data-panel-dock-mode': 'gutter', style },
-        rightPanels.length === 0
-          ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', padding: 8 } }, T('empty'))
-          : rightPanels.map((panel) => renderPanel(panel, layout, setLayout)))
+      // An empty column must cost nothing: with no panel on the right the strip is not
+      // rendered at all, so the conversation keeps the whole width. The open flag stays
+      // set, so the strip appears as soon as a panel is moved here.
+      if (rightPanels.length === 0) return null
+      return h('div', { 'data-panel-dock-strip': '', 'data-panel-dock-mode': 'gutter', style }, rightPanels.map((panel) => renderPanel(panel, layout, setLayout)))
     }
 
     function LeftDock() {
