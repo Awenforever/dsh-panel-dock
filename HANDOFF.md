@@ -16,12 +16,12 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `github.com/Awenforever/dsh-panel-dock` |
-| 版本 | `0.3.12`（0.3.10–0.3.12 只做溢出滚动，见 §5） |
+| 版本 | `0.3.13`（0.3.10–0.3.12 溢出滚动；0.3.13 挤窄时让出拖拽手柄） |
 | npm | **未发布** |
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
 | 持久化 | `localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" \| "right" } }` |
-| 已部署 | invictus（`dsh plugin list` 实测 0.3.12）/ VM win11-test 0.3.12 |
+| 已部署 | invictus（`dsh plugin list` 实测 0.3.13）/ VM win11-test 0.3.12 |
 | 注册表 | `window.__dshPanelDockRegistry`（Map，跨热更新存活） |
 | 监听器 | `window.__dshPanelDockListeners`（Set） |
 
@@ -71,7 +71,7 @@ window.__dshPanelDock = {
 
 ```
 width = min(max(span, 200), 480, anchors.right - 8)   // span = anchors.right - anchors.left
-width > span  → 右锚定（压住对话区，右边界 = 轮次条 − 6，绝不越界）
+width > span  → 右锚定（压住对话区，右边界 = **手柄左侧 − 6**：轮次条不越界，splitter 也必须露出来）
 其余          → 左锚定（贴正文拖动条）
 ```
 
@@ -93,6 +93,7 @@ width > span  → 右锚定（压住对话区，右边界 = 轮次条 − 6，�
 | 挤窄后反而压住轮次条 | 锚点检测用 `x > left + 40` / `+2` 过滤，带为 0 时轮次条被排除、退回 480 兜底 | 判据改成 `x > handleRight` |
 | 面板高于列高时下方卡片不可达 | `overflow: visible` 不滚动 | 溢出时才切滚动容器：按阴影 16px 外扩、同值 padding 缩回，卡片矩形逐像素不变；`scrollbar-width:none` |
 | 溢出判定一直不翻转 | 卡片高度变化（异步数据、样式注入）不触发 dock 重渲染 | `ResizeObserver` 盯每张卡 + 700ms 锚点 tick 兜底（窗口被最小化时节流会让 RO 延迟数秒） |
+| 挤窄后对话拖不回来 | 右锚定贴到「轮次条 − 6」，把 10px 的 splitter 整条盖住；卡片越高可抓的地方越少（改成高卡实测：手柄中心 `elementFromPoint` 命中卡片） | 右边界改为「splitter 左侧 − 6」（0.3.13），代价是卡片离轮次条 23px |
 | 部署后页面仍是旧代码 | 覆盖 `node_modules/<plugin>/client.js`，插件图不变，client-hmr 不换模块 | 走正规安装（§7） |
 
 ## 7. 部署纪律
@@ -140,7 +141,7 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 | 插件 | 版本 | 说明 |
 |---|---|---|
 | `dsh-ustc-quota` | 1.2.7 | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变） |
-| `dsh-codex-advisor` | 0.10.0 | `PANEL_DOCK_SPEC` 钉的是 `a8c789c` = panel-dock **0.1.0（takeover 时代，`inject('main')`）**：用户点它的「安装 panel-dock」会把已装新版**降级**回接管 main。归属会话 `session-3e48f83b`（DSH-Codex-Advisor），计划 0.10.1 改钉 tag `v0.3.12` 并加「不降级」守卫。它发版前**不要**用那个按钮。 |
+| `dsh-codex-advisor` | 0.10.1 | `PANEL_DOCK_SPEC` 钉的是 `a8c789c` = panel-dock **0.1.0（takeover 时代，`inject('main')`）**：用户点它的「安装 panel-dock」会把已装新版**降级**回接管 main。归属会话 `session-3e48f83b`（DSH-Codex-Advisor）已在 **0.10.1**（2026-11-18）修掉：钉 tag `v0.3.12` + 「已装 ≥ 目标就拒绝安装」守卫。已装的 0.10.1 以下的版本仍有此按钮，别点。 |
 
 ## 10. 未决项
 

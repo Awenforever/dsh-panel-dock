@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.12'
+    const VERSION = '0.3.13'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -165,11 +165,15 @@ window.__ModuleLoader__.load({
       let right = null
       let top = 8
       let handleRight = null
+      let handleLeft = null
       try {
         const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
           .find((el) => el.getAttribute('data-side') === 'right')
         if (handle) {
           handleRight = Math.round(box(handle).right)
+          // The splitter is the only way to widen the conversation back: a squeezed
+          // card must stop at its left edge instead of swallowing it.
+          handleLeft = Math.round(box(handle).left)
           left = handleRight + GAP
         }
         // The turn rail sits to the right of the band; other turn-navigation buttons live
@@ -185,12 +189,12 @@ window.__ModuleLoader__.load({
         const tabs = document.querySelector('[data-conversation-tabs]')
         if (tabs) top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
       } catch {}
-      return { left, right, top }
+      return { left, right, top, handleLeft }
     }
 
     function sameAnchors(a, b) {
       if (!a || !b) return a === b
-      return a.left === b.left && a.right === b.right && a.top === b.top
+      return a.left === b.left && a.right === b.right && a.top === b.top && a.handleLeft === b.handleLeft
     }
 
     // What the cards want, gap included.
@@ -283,8 +287,12 @@ window.__ModuleLoader__.load({
       style.width = width
       if (anchored) {
         if (width > span + 0.5) {
-          // Squeezed: pin to the rail side and let the card cover the transcript edge.
-          style.right = Math.max(GAP, window.innerWidth - anchors.right)
+          // Squeezed: let the card cover the transcript edge, but stop at the splitter
+          // -- covering it would leave no visible way to widen the conversation back.
+          const edge = anchors.handleLeft !== null && anchors.handleLeft !== undefined
+            ? anchors.handleLeft - GAP
+            : anchors.right
+          style.right = Math.max(GAP, window.innerWidth - edge)
         } else {
           // Roomy: follow the transcript handle, leaving the surplus band near the rail.
           style.left = anchors.left

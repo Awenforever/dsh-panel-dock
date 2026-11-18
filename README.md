@@ -72,7 +72,8 @@ Measured from the shipped layout, never assumed:
 
 ```
 width = min(max(span, 200), 480, anchors.right - 8)   // span = anchors.right - anchors.left
-width > span  → pinned to the rail side: the card grows over the transcript edge, never past the rail
+width > span  → pinned by its right edge 6px left of the transcript splitter: the card grows over
+                the transcript edge, but it never covers the splitter or the turn rail
 otherwise     → pinned to the handle
 ```
 
@@ -133,7 +134,7 @@ old copy.
 
 ## Status
 
-`0.3.12`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.3.13`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License
