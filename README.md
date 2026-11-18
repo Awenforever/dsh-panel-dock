@@ -1,60 +1,47 @@
 # dsh-panel-dock
 
-One owner for plugin panels in DeepSeek Harness: a **real right-hand column** beside the conversation, plus a managed left stack.
+One owner for plugin panels in DeepSeek Harness: a managed stack in the sidebar footer, and a band
+beside the conversation for cards that need the room next to the transcript.
 
-## Why
+Plugins register a card and the dock decides where it renders. The card never measures the
+conversation column, never negotiates with other cards for space, and never depends on internal
+class names or localized aria labels.
 
-Without this, every UI plugin invents its own `position: fixed` dock, hand-measures the conversation column, and negotiates stacking with whatever else is docked — which produces overlap, mutual yielding loops, and dependence on internal class names and localized aria labels.
+## What it is not
 
-`dsh-panel-dock` takes over the `main` slot, lays out `conversation | splitter | strip` as real flex children, and renders each registered panel **directly** in the strip (no wrapper chrome).
+It is a slot negotiation layer, not a feature the user operates. It registers no navigation entry,
+no button, no dialog and no keyboard shortcut — every affordance on screen belongs to the cards.
+There is no dock UI to open, close, widen or collapse.
 
 ## API
 
 ```js
-const dock = window.__dshPanelDock   // ready once the dock plugin is active
+const dock = window.__dshPanelDock   // present once the dock plugin is active
 
 const dispose = dock.define({
-  id: 'my-panel',          // unique
-  title: 'My panel',       // used by the collapsed bar
-  order: 100,              // lower comes first
-  height: 'fill',          // "fill" | "auto" | <pixels>
-  component: MyPanel,      // see the contract below
+  id: 'my-panel',        // required, unique
+  title: 'My panel',     // label, for hosts that show one
+  side: 'left',          // 'left' (default) | 'right'
+  component: MyPanel,    // required, a React component
 })
 ```
 
-Other calls: `open()`, `close()`, `isOpen()`, `panels()`, `getWidth()`, `setWidth(px)`, `setCollapsed(id, bool)`, `toggle(id)`, `getLayout()`.
+`define()` throws unless `id` is a non-empty string and `component` is a function; defining an
+existing id replaces the earlier definition. It returns a `dispose()` that unregisters the card.
 
-### Where a panel lives
+| call | returns |
+|---|---|
+| `dock.panels()` | `[{ id, title, order, side }]` in registration order |
+| `dock.getSide(id)` | `'left' \| 'right'` |
+| `dock.setSide(id, side)` | the side that was stored |
+| `dock.toggleSide(id)` | the new side |
+| `dock.subscribe(listener)` | `unsubscribe()`; fires on every registration and side change |
+| `dock.version` | the dock's version string |
 
-A panel starts on the side its definition asks for (`side: "left" | "right"`, default `right`) and the
-user can move it with the panel own toggle button:
+## Where a panel lives
 
-```js
-dock.toggleSide('my-panel')   // returns the new side
-dock.getSide('my-panel')      // read it for the glyph direction
-dock.setSide('my-panel', 'left')
-```
-
-Moving a panel to the right opens the column; moving the last right panel away closes it. The open
-state is remembered, so a reload restores the column exactly as the user left it.
-
-
-### No UI of its own
-
-The dock is a slot negotiation layer, not a feature the user operates. It never registers a
-navigation entry, a button, a dialog or a keyboard shortcut. The only affordances are the ones
-the cards already have (for example a card's own icon that moves it between dock sides).
-
-Panels land in one of two hosts, chosen by their side:
-
-| Side | Host | Geometry |
-|---|---|---|
-| `left` (default) | the sidebar footer stack | full sidebar width, content height, registration order |
-| `right` | the band between the transcript handle and the turn rail | left edge = handle right + 6, width = min(band, 480), top = tab strip bottom + 6 |
-
-With nothing on the right the band does not exist at all: no reserved width, no overlay, no
-click target. Stacking is first-come-first-served in both hosts — a numeric `order` never
-reorders the stack.
+A panel starts on the side its definition asks for (`side`, default `left`) and the user moves it
+with the card's own control:
 
 ```js
 dock.getSide('my-panel')      // 'left' | 'right'
@@ -62,17 +49,56 @@ dock.toggleSide('my-panel')   // returns the new side
 dock.setSide('my-panel', 'right')
 ```
 
-### Panel component contract
-1. Render **one root element** and **spread the props you receive** onto it, keeping `style` last.
-2. Never position yourself (`position: fixed`, margins that fight the column, explicit width). The dock owns geometry.
-3. Your element is the visual rectangle — the dock adds no border, radius, padding or title bar.
-4. On the **left** the dock only supplies `width: 100%`; a panel there must have intrinsic height.
-   On the **right** the dock also supplies flex sizing from `height`: `"fill"` grows, a number is fixed,
-   `"auto"` keeps the content height.
+The choice is persisted per panel id, so a reload restores it.
 
-### Readiness
+| Side | Host slot | Geometry |
+|---|---|---|
+| `left` (default) | `sidebar.footer.action` | full sidebar width, intrinsic height, 6px gap |
+| `right` | `shell.overlay` | band between the transcript handle and the turn rail, 6px gap |
 
-Client plugin bundles resolve bare module ids only, so the dock publishes a single well-known global instead of a Cordis service. Consumers poll on activation:
+With nothing on the right the band does not exist at all: no reserved width, no overlay, no click
+target. Stacking is first-come-first-served in both hosts — a numeric `order` never reorders it.
+
+### Right band anchors
+
+Measured from the shipped layout, never assumed:
+
+| Edge | Rule |
+|---|---|
+| left | `widthHandle[data-side="right"]` right + 6 |
+| right | smallest turn-navigation x that is still right of the handle, minus 6 |
+| top | `[data-conversation-tabs]` row bottom + 6 |
+| bottom | 8 |
+
+```
+width = min(max(span, 200), 480, anchors.right - 8)   // span = anchors.right - anchors.left
+width > span  → pinned to the rail side: the card grows over the transcript edge, never past the rail
+otherwise     → pinned to the handle
+```
+
+The band is `pointer-events: none` and cards re-enable their own; it never swallows a click meant
+for the conversation.
+
+## Panel component contract
+
+1. Render **one root element** and **spread the props you receive** onto it, keeping `style` last:
+   `h('div', { ...rest, style: { ...style, /* yours */ } })`.
+2. Never position yourself: no `position: fixed`, no explicit width, no margins used to fight the
+   dock. The dock owns placement.
+3. Your element is the visual rectangle. The dock adds no border, radius, padding or title bar — the
+   card's own shell (border, radius, background, shadow) stays.
+4. Give it an **intrinsic height** in both hosts. The dock supplies width, flex reset and the 6px
+   stack gap, nothing more: `order` and `height` in a definition are accepted for compatibility but
+   have no layout effect in 0.3.x.
+
+The band is `overflow: visible` on purpose: any scroll container turns a card's box-shadow into a
+hard-edged rectangle, so the band refuses to scroll. Consequence: **panels taller than the column do
+not scroll** (open item).
+
+## Readiness
+
+Client plugin bundles resolve bare module ids only, so the dock publishes a well-known global instead
+of a Cordis service. Consumers poll on activation:
 
 ```js
 const register = () => {
@@ -83,13 +109,28 @@ const register = () => {
 register()
 ```
 
-## Layout state
+## State
 
-`localStorage["dsh.panel-dock.v1"] = { width, collapsed: { [id]: true } }`; width is clamped to 200-720.
+`localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" | "right" } }`. Unknown ids and
+unreadable storage are ignored, so a cleared or private-mode profile just falls back to the
+definition defaults.
+
+## Install
+
+Not on npm yet. Install a tarball spec through the host plugin manager; the bundle ships its own
+patch:
+
+- `https://github.com/Awenforever/dsh-panel-dock/archive/<commit>.tar.gz`
+- `file:C:/<path>/dsh-panel-dock-<version>.tgz`
+
+The client half hot-loads through `dsh-client-hmr`, so no page refresh is needed. Bump the version
+for every build you install: `pnpm` treats an unchanged version as already up to date and keeps the
+old copy.
 
 ## Status
 
-Early development. Right column, height modes, collapse, width drag and persistence are implemented and verified on a test machine; the left stack and the migration of existing plugins are in progress.
+`0.3.9`. In use by `dsh-ustc-quota` 1.2.6 and `dsh-codex-advisor` 0.10.0, both on the left by
+default. Not published to npm.
 
 ## License
 
