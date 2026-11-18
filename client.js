@@ -8,10 +8,14 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.4'
+    const VERSION = '0.3.5'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
+    // Card shadows are 12px blurred: a 6px gap lets two neighbours' shadows merge into
+    // one grey band, which reads as a single surface. Separate them far enough that each
+    // shadow fades out on its own.
+    const STACK_GAP = 18
     // A panel narrower than this stops being readable; the gutter keeps this floor
     // and lets its left edge sit over the transcript margin instead.
     const MIN_PANEL_WIDTH = 200
@@ -139,7 +143,7 @@ window.__ModuleLoader__.load({
         style: {
           display: 'flex',
           flexDirection: 'column',
-          gap: GAP,
+          gap: STACK_GAP,
           // The host footer is a nowrap flex row; claim it and refuse to shrink,
           // otherwise the stack collapses to a sliver of a few pixels.
           flex: '0 0 100%',
@@ -206,7 +210,7 @@ window.__ModuleLoader__.load({
         bottom: 8,
         display: 'flex',
         flexDirection: 'column',
-        gap: GAP,
+        gap: STACK_GAP,
         minWidth: 0,
         boxSizing: 'border-box',
         overflow: 'visible',
