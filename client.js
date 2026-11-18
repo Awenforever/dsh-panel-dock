@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.2'
+    const VERSION = '0.3.4'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -18,6 +18,9 @@ window.__ModuleLoader__.load({
     // A card wider than this stops reading as a card; the band may be wider than the
     // card and the surplus stays with the conversation.
     const MAX_PANEL_WIDTH = 480
+    // The band must not clip: any scroll container turns its children's box-shadow into
+    // a hard-edged rectangle. Cards own their shadow, and it has to fall naturally the
+    // way it does in the sidebar.
 
     const zh = { empty: '暂无面板' }
     const en = { empty: 'No panels yet' }
@@ -206,7 +209,7 @@ window.__ModuleLoader__.load({
         gap: GAP,
         minWidth: 0,
         boxSizing: 'border-box',
-        overflowY: 'auto',
+        overflow: 'visible',
         // The band is a transparent overlay over the transcript's right margin: it
         // must not swallow clicks meant for the conversation behind it.
         pointerEvents: 'none',
