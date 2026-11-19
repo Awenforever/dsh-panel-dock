@@ -103,7 +103,10 @@ the conversation area's right edge — it never draws on that panel.
    stack gap, nothing more: `order` and `height` in a definition are accepted for compatibility but
    have no layout effect in 0.3.x.
 5. Declare `minWidth` (default 280). It is your statement of the width below which your content
-   stops being useful — the dock never renders you narrower and never guesses your number.
+   stops being useful — the dock never renders you narrower in the **right band** and never guesses
+   your number. **It does not apply to the left stack**: there the dock gives you the sidebar's
+   width (typically ~264px, the host's and the user's to change), so a card that needs 280 will
+   still be cut when it sits on the left.
    To find it: force the strip's width to 240/260/280/300/340 and look at a screenshot of your own
    card; pick the narrowest width where no value is cut to `35.2/1…`. `scrollWidth` and text-range
    measurements both miss that cut, so it has to be looked at.
