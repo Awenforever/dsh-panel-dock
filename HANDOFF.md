@@ -169,7 +169,12 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 - npm 是否发布（用户尚未批准）。仓库目前没有任何 tag，`v0.3.12` 是第一个。
 - `dock-core.js` + `test/dock.test.js` 仍在测**已删除**的模型（width / collapse / open / height 模式 / order 排序）：10/10 绿但不覆盖任何现役几何。要么删、要么按现役逻辑（side 解析 + 带宽公式）重写，待用户定。
 - 左侧栈溢出未验证（宿主 sidebar 自身是否滚动）——右侧已解决，左侧未测。
-- 左右切换会重挂卡片（跨两个宿主必然 remount），实测：卡片出现 7–17ms，但会取数的卡（ustc-quota）要 ~2.1s 才把「加载中…」变成数据。彻底修法是把所有卡放进一个 portal 托盘、用 DOM 移动容器（保住挂载），但 portal 会切断宿主 React context，第三方卡可能受影响——未做，待用户定。
+- 左右切换会重挂卡片（跨两个宿主必然 remount），实测：卡片出现 7–17ms，但会取数的卡（ustc-quota）要 ~2.1s 才把「加载中…」变成数据。
+  彻底修法：把所有卡放进一个 **portal 托盘**（Tray 只挂载一次），每张卡一个固定容器 div，切边时用 `appendChild` **移动容器**——React 看不见容器变化，就不会 remount。
+  前置假设已实测（2026-11-19，path F）：把正在渲染、已取到数据的 ustc-quota 节点纯 DOM 移动到别的父节点，内容与数据原样保留、`loading` 始终 false（5s 后仍如此）。
+  两个消费者都不依赖宿主 React context（quota 用模块级 `subscribeActiveSession` + `useSyncExternalStore`；advisor 无 context），所以 portal 的主要理论风险不适用于当前消费方。
+  剩余风险：React 事件会冒到托盘而不是宿主树（依赖「点外面关闭」的宿主逻辑可能受影响）；容器跨树移动后的样式继承差异（今天切边本来就跨树，非新增）。
+  未做，待用户点头。
 - 侵入时会盖住轮次条（用户允许）；轮次条在那一段不可点。
 - 回落左侧栈只在「280 > 对话列宽 50%」时发生；此时卡自己的「移到右侧」按了没有可见效果。
 
