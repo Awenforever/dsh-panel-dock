@@ -22,6 +22,7 @@ const dispose = dock.define({
   id: 'my-panel',        // required, unique
   title: 'My panel',     // label, for hosts that show one
   side: 'left',          // 'left' (default) | 'right'
+  minWidth: 280,         // width below which your content stops being useful (default 280)
   component: MyPanel,    // required, a React component
 })
 ```
@@ -31,7 +32,7 @@ existing id replaces the earlier definition. It returns a `dispose()` that unreg
 
 | call | returns |
 |---|---|
-| `dock.panels()` | `[{ id, title, order, side }]` in registration order |
+| `dock.panels()` | `[{ id, title, order, side, minWidth }]` in registration order |
 | `dock.getSide(id)` | `'left' \| 'right'` |
 | `dock.setSide(id, side)` | the side that was stored |
 | `dock.toggleSide(id)` | the new side |
@@ -75,14 +76,15 @@ width = min(max(span, 200), 480, anchors.right - 8)   // span = anchors.right - 
 inner = railLeft - 6 - (handleRight + 6)     // gutter between the handle and the turn rail
 outer = (areaRight - 6) - (railRight + 6)    // gutter between the rail and the column's edge
 
-MIN_READABLE = 280    // measured: below this the shipped cards cut their own values
+required = clamp(max(minWidth of the right-side panels, default 280), 120, 480)
+             // one column, one width: the most demanding card in it wins
 
-inner >= 280   → pinned to the handle (the usual case), width = min(inner, 480)
-else outer>=280 → pinned to the column's right edge, width = min(outer, 480)
-else           → intrusion: width is exactly MIN_READABLE, the right edge sits on the column
-                 edge, so the card takes the smallest possible bite out of the transcript.
-                 Only if even that would cover half the column do the cards fall back to the
-                 sidebar stack.
+inner >= required   → pinned to the handle (the usual case), width = min(inner, 480)
+else outer>=required → pinned to the column's right edge, width = min(outer, 480)
+else                → intrusion: width is exactly required, the right edge sits on the column
+                      edge, so the card takes the smallest possible bite out of the transcript.
+                      Only if even that would cover half the column do the cards fall back to
+                      the sidebar stack.
 ```
 
 The band is `pointer-events: none` and cards re-enable their own; it never swallows a click meant
@@ -100,6 +102,11 @@ the conversation area's right edge — it never draws on that panel.
 4. Give it an **intrinsic height** in both hosts. The dock supplies width, flex reset and the 6px
    stack gap, nothing more: `order` and `height` in a definition are accepted for compatibility but
    have no layout effect in 0.3.x.
+5. Declare `minWidth` (default 280). It is your statement of the width below which your content
+   stops being useful — the dock never renders you narrower and never guesses your number.
+   To find it: force the strip's width to 240/260/280/300/340 and look at a screenshot of your own
+   card; pick the narrowest width where no value is cut to `35.2/1…`. `scrollWidth` and text-range
+   measurements both miss that cut, so it has to be looked at.
 
 A stack that fits stays a plain, non-clipping column: cards may draw outside their own box (their
 shadow). Only when the cards are **taller than the column** does the band become a scroll container,
@@ -143,7 +150,7 @@ old copy.
 
 ## Status
 
-`0.3.21`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.3.23`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License

@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.21'
+    const VERSION = '0.3.23'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -17,17 +17,18 @@ window.__ModuleLoader__.load({
     // band only becomes a scroll container when the cards no longer fit the column,
     // and then it grows by the shadow's reach and pads the same amount back.
     const SHADOW_GUTTER = 16
-    // A panel narrower than this stops being readable; the gutter keeps this floor
-    // and lets its left edge sit over the transcript margin instead.
-    const MIN_PANEL_WIDTH = 200
+    // The panel declares the width below which its own content is no longer useful
+    // (`minWidth` in define()). The dock never renders it narrower than that, and when
+    // the whitespace is short it takes exactly the missing pixels out of the transcript.
+    // 280 is the default because it is measured, not guessed: at 280 both shipped cards
+    // render every value in full, while at 264 the quota card already cuts its 24h column
+    // to "35.2/1..." and at 200 it cuts 19 elements.
+    const DEFAULT_MIN_WIDTH = 280
+    // Nothing is drawn narrower than this, whatever a panel declares.
+    const MIN_WIDTH_FLOOR = 120
     // A card wider than this stops reading as a card; the band may be wider than the
     // card and the surplus stays with the conversation.
     const MAX_PANEL_WIDTH = 480
-    // Measured, not guessed: at 280px the shipped cards render every value in full
-    // (at 264 the quota card cuts its 24h column to "35.2/1...", at 200 it cuts 19
-    // elements). This is the width a card never goes below, even when it has to take
-    // that width out of the transcript.
-    const MIN_READABLE_WIDTH = 280
     // A card may eat into the conversation, but not more than half of it: past that the
     // card belongs in the sidebar stack instead of on top of the text.
     const MAX_COVER_RATIO = 0.5
@@ -110,7 +111,14 @@ window.__ModuleLoader__.load({
       if (typeof definition.component !== 'function') {
         throw new Error('panel-dock: define(' + definition.id + ') needs a component')
       }
-      registry.set(definition.id, definition)
+      // minWidth is the panel's own statement of "below this my content stops being
+      // useful". The dock honours it as the width it will never undercut, taking the
+      // difference out of the transcript only when there is no whitespace left.
+      const declared = Number(definition.minWidth)
+      const minWidth = Number.isFinite(declared) && declared > 0
+        ? Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR, Math.round(declared)))
+        : DEFAULT_MIN_WIDTH
+      registry.set(definition.id, Object.assign({}, definition, { minWidth }))
       emit()
       return () => { registry.delete(definition.id); emit() }
     }
@@ -282,18 +290,20 @@ window.__ModuleLoader__.load({
       emit()
     }
 
-    function planBand(anchors) {
+    // `required` is the widest minimum any right-side card declared: the band is one
+    // column, so it has to satisfy the most demanding card in it.
+    function planBand(anchors, required) {
       const vw = typeof window === 'undefined' ? 0 : window.innerWidth
       const areaEdge = Math.min(vw, anchors && anchors.areaRight ? anchors.areaRight : vw)
       const limit = areaEdge - GAP
       const hasRail = Boolean(anchors) && anchors.railRight !== null && anchors.railRight !== undefined
       const inner = anchors && anchors.left !== null && anchors.right !== null ? anchors.right - anchors.left : null
       // The whitespace is used where it exists.
-      if (inner !== null && inner >= MIN_READABLE_WIDTH) {
+      if (inner !== null && inner >= required) {
         return { mode: 'inner', left: anchors.left, width: Math.min(inner, MAX_PANEL_WIDTH), limit }
       }
       const outer = hasRail ? limit - (anchors.railRight + GAP) : null
-      if (outer !== null && outer >= MIN_READABLE_WIDTH) {
+      if (outer !== null && outer >= required) {
         return { mode: 'outer', rightEdge: limit, width: Math.min(outer, MAX_PANEL_WIDTH), limit }
       }
       // No whitespace wide enough: take the minimum a card needs out of the transcript,
@@ -304,8 +314,8 @@ window.__ModuleLoader__.load({
         ? Math.max(1, anchors.areaRight - anchors.areaLeft)
         : Math.max(1, areaEdge)
       // The card may cover at most half of the conversation column.
-      if (MIN_READABLE_WIDTH > column * MAX_COVER_RATIO) return { mode: 'fallback', width: 0, limit }
-      return { mode: 'intrude', rightEdge, width: MIN_READABLE_WIDTH, limit }
+      if (required > column * MAX_COVER_RATIO) return { mode: 'fallback', width: 0, limit }
+      return { mode: 'intrude', rightEdge, width: required, limit }
     }
 
     function RightHost() {
@@ -339,7 +349,11 @@ window.__ModuleLoader__.load({
 
       const items = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
       const top = anchors ? anchors.top : 8
-      const plan = planBand(anchors)
+      // Default 280 applies only to a panel that declared nothing; a panel that says it
+      // can live with 160 gets 160, so it never takes more text than it needs.
+      const required = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR,
+        items.reduce((widest, panel) => Math.max(widest, panel.minWidth || DEFAULT_MIN_WIDTH), 0)))
+      const plan = planBand(anchors, required)
 
       // Publish the decision so the sidebar stack can take the cards over.
       React.useEffect(() => { setFallback(plan.mode === 'fallback') })
@@ -434,7 +448,7 @@ window.__ModuleLoader__.load({
         window.__dshPanelDock = {
           version: VERSION,
           define,
-          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side) })),
+          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), minWidth: p.minWidth })),
           getSide: (id) => sideOf(id, registry.has(id) ? registry.get(id).side : 'left'),
           setSide,
           toggleSide,

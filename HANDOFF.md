@@ -16,7 +16,7 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `github.com/Awenforever/dsh-panel-dock` |
-| 版本 | `0.3.21`（0.3.10–0.3.12 溢出滚动；0.3.13 让出手柄；0.3.14 轮次条竖列聚类；0.3.15 不越到右侧边栏；0.3.17 列右缘取法；0.3.21 最小可读宽度 280 + 克制侵入） |
+| 版本 | `0.3.23`（…0.3.21 最小可读宽度 280 + 克制侵入；0.3.22–0.3.23 把最小可读宽度变成**面板声明字段** `minWidth`） |
 | npm | **未发布** |
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
@@ -41,7 +41,9 @@ window.__dshPanelDock = {
 }
 ```
 
-`define({ id, title, order, side, height, component })`：`id` 非空、`component` 必须是函数；同 id 重复注册会覆盖。
+`define({ id, title, order, side, minWidth, component })`：`id` 非空、`component` 必须是函数；同 id 重复注册会覆盖。
+`minWidth`（0.3.22）：面板声明「低于这个宽度我的内容就不再有意义」，正整数 px，钳到 [120, 480]，缺省 280。
+dock 保证右带里**永不窄于它**；空白不够时只取走差额。`panels()` 会把解析后的 `minWidth` 一并返回。
 `order` 目前**不参与排序**——堆叠顺序是注册先后（先来后到）。
 
 ## 4. 面板组件契约
@@ -50,6 +52,7 @@ window.__dshPanelDock = {
 2. **不要**自己定位：无 `position: fixed`、无固定宽高、不要用 margin 对抗父级。
 3. dock 会注入 `style`（`width/minWidth/boxSizing/flex:0 0 auto/order:0/margin:0/pointerEvents:auto`）。卡片自带的外壳（边框/圆角/底色/阴影）保留。
 4. 左侧宿主只提供 `width: 100%`，所以面板必须有**固有高度**。
+5. **必须声明 `minWidth`**（或接受默认 280）：它是「内容不再有意义」的宽度。dock 只负责不让它更窄，不负责猜你的内容。测法见 §8 的宽度扫描。
 
 ## 5. 几何规则
 
@@ -74,13 +77,15 @@ window.__dshPanelDock = {
 inner = 轮次条左 − 6 − (手柄右 + 6)        // 手柄与轮次条之间
 outer = (areaRight − 6) − (轮次条右 + 6)   // 轮次条与列右缘之间
 
-**MIN_READABLE_WIDTH = 280**（实测：264 时 ustc-quota 的 24h 列被截成 "35.2/1…"，280 起全部完整；200 时 19 处裁切）
+required = clamp(max(右带各卡的 minWidth，缺省 280), [120, 480])   ← 一列只能有一个宽度，取最挑的那张
 
-inner ≥ 280       → 左锚定在手柄 + 6，width = min(inner, 480)      ← 常态
-否则 outer ≥ 280  → 右锚定在列右缘，width = min(outer, 480)        ← 用轮次条外侧留白
-否则 → **克制侵入**：width = 280，右缘贴列右缘（会盖住轮次条，用户 2026-11-19 明确允许），
-       只从正文里拿 280 − 可用 的那一条，绝不 480 糊脸
-若 280 > 对话列宽的 50% → 回落到左侧栈渲染（极端窄窗才触发）
+inner ≥ required       → 左锚定在手柄 + 6，width = min(inner, 480)     ← 常态
+否则 outer ≥ required  → 右锚定在列右缘，width = min(outer, 480)       ← 用轮次条外侧留白
+否则 → **克制侵入**：width = required，右缘贴列右缘（会盖住轮次条，用户明确允许），
+       只从正文里拿 required − 可用 的那一条，绝不 480 糊脸
+若 required > 对话列宽的 50% → 回落到左侧栈渲染（极端窄窗才触发）
+
+默认 280 是实测值：264 时 ustc-quota 的 24h 列被截成 "35.2/1…"，280 起全部完整，200 时 19 处裁切。
 ```
 
 - **右侧边栏（开始 / 终端 / 浏览器）打开时，条带的硬右界是对话区的右边缘**，不是窗口边缘（0.3.15）。否则卡片会压在侧边栏上，或落在窗口边缘而越出对话区。
@@ -143,6 +148,7 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 | `probe-ovf3.mjs` | 卡片横向溢出/裁切度量 |
 | `narrow.mjs` | 纯视口缩放的对照（注意：这不是「挤窄」，见 §5） |
 
+- **宽度扫描（量 minWidth）**：把 `[data-panel-dock-strip]` 的 `width` 用内联 `!important` 依次设成 240/260/280/300/340，每次截图看卡片里的**数值**有没有被截成 `35.2/1…`；取「最窄且无截断」那一档。注意：`scrollWidth > clientWidth` 与文本 Range 宽度两条启发式都会漏判（264 时都报"无截断"，实际已截），**只能看图**。
 - 同一实例的**桌面 app**：VM 上的 DSH 以 `--remote-debugging-port=9222` 启动，直连 `dsh-app://app/` 这个 target 即可（**不需要**伪造 auth cookie，也别选 `welcome.html`）。窗口被最小化/后台时会节流（RO 与 rAF 延迟数秒、`Input.dispatchMouseEvent` 超时），先 `Emulation.setFocusEmulationEnabled` + `Page.setWebLifecycleState: active`。
 - 单元测试在沙箱里用 `node --test` 会 `spawn EPERM`（runner 要起子进程）：直接 `node test/dock.test.js`。
 
