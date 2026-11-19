@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.17'
+    const VERSION = '0.3.21'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -23,6 +23,14 @@ window.__ModuleLoader__.load({
     // A card wider than this stops reading as a card; the band may be wider than the
     // card and the surplus stays with the conversation.
     const MAX_PANEL_WIDTH = 480
+    // Measured, not guessed: at 280px the shipped cards render every value in full
+    // (at 264 the quota card cuts its 24h column to "35.2/1...", at 200 it cuts 19
+    // elements). This is the width a card never goes below, even when it has to take
+    // that width out of the transcript.
+    const MIN_READABLE_WIDTH = 280
+    // A card may eat into the conversation, but not more than half of it: past that the
+    // card belongs in the sidebar stack instead of on top of the text.
+    const MAX_COVER_RATIO = 0.5
     // The band must not clip: any scroll container turns its children's box-shadow into
     // a hard-edged rectangle. Cards own their shadow, and it has to fall naturally the
     // way it does in the sidebar.
@@ -170,6 +178,7 @@ window.__ModuleLoader__.load({
       let handleLeft = null
       let railRight = null
       let areaRight = null
+      let areaLeft = null
       try {
         const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
           .find((el) => el.getAttribute('data-side') === 'right')
@@ -210,16 +219,26 @@ window.__ModuleLoader__.load({
             else if (Math.abs(rect.right - columnRight) > 3) break
             node = node.parentElement
           }
-          if (columnRight !== null && columnRight < window.innerWidth - 2) areaRight = Math.round(columnRight)
+          if (columnRight !== null && columnRight < window.innerWidth - 2) {
+            areaRight = Math.round(columnRight)
+            areaLeft = Math.round(box(tabs).left)
+            let up = tabs.parentElement
+            while (up && up !== document.body) {
+              const r = box(up)
+              if (r.width > 0 && r.height >= 40 && Math.abs(r.right - columnRight) <= 3) areaLeft = Math.round(r.left)
+              up = up.parentElement
+            }
+          }
         }
       } catch {}
-      return { left, right, top, handleLeft, railRight, areaRight }
+      return { left, right, top, handleLeft, handleRight, railRight, areaRight, areaLeft }
     }
 
     function sameAnchors(a, b) {
       if (!a || !b) return a === b
       return a.left === b.left && a.right === b.right && a.top === b.top
-        && a.handleLeft === b.handleLeft && a.railRight === b.railRight && a.areaRight === b.areaRight
+        && a.handleLeft === b.handleLeft && a.handleRight === b.handleRight
+        && a.railRight === b.railRight && a.areaRight === b.areaRight && a.areaLeft === b.areaLeft
     }
 
     // What the cards want, gap included.
@@ -267,21 +286,26 @@ window.__ModuleLoader__.load({
       const vw = typeof window === 'undefined' ? 0 : window.innerWidth
       const areaEdge = Math.min(vw, anchors && anchors.areaRight ? anchors.areaRight : vw)
       const limit = areaEdge - GAP
+      const hasRail = Boolean(anchors) && anchors.railRight !== null && anchors.railRight !== undefined
       const inner = anchors && anchors.left !== null && anchors.right !== null ? anchors.right - anchors.left : null
-      if (inner !== null && inner >= MIN_PANEL_WIDTH) {
+      // The whitespace is used where it exists.
+      if (inner !== null && inner >= MIN_READABLE_WIDTH) {
         return { mode: 'inner', left: anchors.left, width: Math.min(inner, MAX_PANEL_WIDTH), limit }
       }
-      const outer = anchors && anchors.railRight !== null && anchors.railRight !== undefined
-        ? limit - (anchors.railRight + GAP)
-        : null
-      if (outer !== null && outer >= MIN_PANEL_WIDTH) {
+      const outer = hasRail ? limit - (anchors.railRight + GAP) : null
+      if (outer !== null && outer >= MIN_READABLE_WIDTH) {
         return { mode: 'outer', rightEdge: limit, width: Math.min(outer, MAX_PANEL_WIDTH), limit }
       }
-      if (inner === null) {
-        const width = Math.min(MAX_PANEL_WIDTH, limit - GAP)
-        if (width >= MIN_PANEL_WIDTH) return { mode: 'edge', rightEdge: limit, width, limit }
-      }
-      return { mode: 'fallback', width: 0, limit }
+      // No whitespace wide enough: take the minimum a card needs out of the transcript,
+      // and only that much. The card sits flush with the conversation column so it takes
+      // the least possible text out of view; covering the turn rail is accepted.
+      const rightEdge = limit
+      const column = anchors && anchors.areaRight && anchors.areaLeft
+        ? Math.max(1, anchors.areaRight - anchors.areaLeft)
+        : Math.max(1, areaEdge)
+      // The card may cover at most half of the conversation column.
+      if (MIN_READABLE_WIDTH > column * MAX_COVER_RATIO) return { mode: 'fallback', width: 0, limit }
+      return { mode: 'intrude', rightEdge, width: MIN_READABLE_WIDTH, limit }
     }
 
     function RightHost() {

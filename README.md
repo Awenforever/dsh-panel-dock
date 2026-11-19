@@ -75,10 +75,14 @@ width = min(max(span, 200), 480, anchors.right - 8)   // span = anchors.right - 
 inner = railLeft - 6 - (handleRight + 6)     // gutter between the handle and the turn rail
 outer = (areaRight - 6) - (railRight + 6)    // gutter between the rail and the column's edge
 
-inner >= 200  → pinned to the handle (the usual case), width = min(inner, 480)
-else outer>=200 → pinned to the column's right edge, width = min(outer, 480)
-else          → right-side panels render in the sidebar stack instead: a card reads better
-                there than squeezed over the transcript, and the rail stays usable
+MIN_READABLE = 280    // measured: below this the shipped cards cut their own values
+
+inner >= 280   → pinned to the handle (the usual case), width = min(inner, 480)
+else outer>=280 → pinned to the column's right edge, width = min(outer, 480)
+else           → intrusion: width is exactly MIN_READABLE, the right edge sits on the column
+                 edge, so the card takes the smallest possible bite out of the transcript.
+                 Only if even that would cover half the column do the cards fall back to the
+                 sidebar stack.
 ```
 
 The band is `pointer-events: none` and cards re-enable their own; it never swallows a click meant
@@ -139,7 +143,7 @@ old copy.
 
 ## Status
 
-`0.3.17`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.3.21`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License
