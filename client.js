@@ -3,12 +3,21 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
+    // Portals are how a card survives being moved between the sidebar and the band.
+    // The loader exposes react-dom (dshmarket relies on it); if a host ever does not,
+    // the dock falls back to the plain two-host rendering instead of failing.
+    const createPortal = (() => {
+      try {
+        const dom = require('react-dom')
+        return dom && typeof dom.createPortal === 'function' ? dom.createPortal : null
+      } catch { return null }
+    })()
 
     // dsh-panel-dock is a slot negotiation layer, not a UI of its own: plugins
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.23'
+    const VERSION = '0.4.0'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -435,15 +444,211 @@ window.__ModuleLoader__.load({
       }, items.map(renderPanel))
     }
 
+
+    // ---- tray (portal transport) ----
+    // Moving a card between the sidebar and the band must not remount it: a data card
+    // would refetch and flash. So each card lives in a portal whose *container* is moved
+    // in the DOM (appendChild / insertBefore) instead of being recreated. React keeps the
+    // subtree mounted across a DOM move -- measured on a live card: content and data stay,
+    // loading never flips back on.
+    const tray = { cells: new Map(), leftSlot: null, leftStack: null, poke: null }
+
+    function cellOf(id) {
+      let el = tray.cells.get(id)
+      if (!el) {
+        el = document.createElement('div')
+        el.setAttribute('data-panel-dock-cell', id)
+        // The card is the visible rectangle; the cell is only a transport box.
+        el.style.cssText = 'display:flex;flex-direction:column;flex:0 0 auto;min-width:0;pointer-events:none'
+        tray.cells.set(id, el)
+      }
+      return el
+    }
+
+    function dropDeadCells(alive) {
+      for (const [id, el] of [...tray.cells]) {
+        if (alive.has(id)) continue
+        if (el.parentNode) el.parentNode.removeChild(el)
+        tray.cells.delete(id)
+      }
+    }
+
+    function leftStackNode() {
+      if (!tray.leftStack) {
+        const el = document.createElement('div')
+        el.setAttribute('data-panel-dock-left', '')
+        el.style.cssText = [
+          'display:flex', 'flex-direction:column', 'gap:' + STACK_GAP + 'px',
+          'flex:0 0 100%', 'width:100%', 'min-width:0', 'box-sizing:border-box',
+        ].join(';')
+        tray.leftStack = el
+      }
+      return tray.leftStack
+    }
+
+    // The sidebar half is only a placeholder: the tray moves the cell containers in.
+    function LeftSlot() {
+      const ref = React.useRef(null)
+      React.useEffect(() => {
+        tray.leftSlot = ref.current
+        if (tray.poke) tray.poke()
+        return () => { if (tray.leftSlot === ref.current) tray.leftSlot = null }
+      }, [])
+      return h('div', { 'data-panel-dock-left-slot': '', ref, style: { display: 'contents' } })
+    }
+
+    function TrayHost() {
+      const all = useRegistry()
+      const [anchors, setAnchors] = React.useState(() => measureAnchors())
+      const [scrolls, setScrolls] = React.useState(false)
+      const [, bump] = React.useState(0)
+      const band = React.useRef(null)
+      const measureStack = React.useRef(null)
+
+      React.useEffect(() => {
+        tray.poke = () => bump((n) => n + 1)
+        return () => { tray.poke = null }
+      }, [])
+
+      React.useEffect(() => {
+        let raf = 0
+        const sync = () => {
+          raf = 0
+          const next = measureAnchors()
+          setAnchors((prev) => (sameAnchors(prev, next) ? prev : next))
+          if (measureStack.current) measureStack.current()
+        }
+        const schedule = () => { if (!raf) raf = requestAnimationFrame(sync) }
+        window.addEventListener('resize', schedule)
+        const timer = setInterval(schedule, 700)
+        return () => {
+          window.removeEventListener('resize', schedule)
+          clearInterval(timer)
+          if (raf) cancelAnimationFrame(raf)
+        }
+      }, [])
+
+      const right = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
+      const top = anchors ? anchors.top : 8
+      const required = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR,
+        right.reduce((widest, panel) => Math.max(widest, panel.minWidth || DEFAULT_MIN_WIDTH), 0)))
+      const plan = planBand(anchors, required)
+      const inBand = plan.mode !== 'fallback' && right.length > 0
+
+      // Placement: every frame after render, put each cell into the stack that owns it.
+      React.useEffect(() => {
+        const alive = new Set(all.map((panel) => panel.id))
+        dropDeadCells(alive)
+        const wantLeft = []
+        const wantRight = []
+        for (const panel of all) {
+          const side = sideOf(panel.id, panel.side)
+          if (side === 'right' && inBand) wantRight.push(panel.id)
+          else wantLeft.push(panel.id)
+        }
+        if (wantLeft.length && tray.leftSlot) {
+          const stack = leftStackNode()
+          if (stack.parentNode !== tray.leftSlot) tray.leftSlot.appendChild(stack)
+          wantLeft.forEach((id, index) => {
+            const el = cellOf(id)
+            const at = stack.children[index]
+            if (at !== el) stack.insertBefore(el, at || null)
+          })
+        } else if (tray.leftStack && tray.leftStack.parentNode) {
+          tray.leftStack.parentNode.removeChild(tray.leftStack)
+        }
+        const bandEl = band.current
+        if (bandEl) {
+          wantRight.forEach((id, index) => {
+            const el = cellOf(id)
+            const at = bandEl.children[index]
+            if (at !== el) bandEl.insertBefore(el, at || null)
+          })
+        }
+      })
+
+      // The stack scrolls only when the cards outgrow the column (see SHADOW_GUTTER).
+      React.useEffect(() => {
+        const el = band.current
+        const measure = () => {
+          if (!el) { setScrolls(false); return }
+          const column = Math.max(0, window.innerHeight - 8 - top)
+          const next = stackedHeight(el) > column + 0.5
+          setScrolls((prev) => (prev === next ? prev : next))
+        }
+        measureStack.current = measure
+        measure()
+        if (!el || typeof ResizeObserver === 'undefined') return undefined
+        const observer = new ResizeObserver(measure)
+        for (const kid of el.children) observer.observe(kid)
+        return () => { observer.disconnect(); measureStack.current = null }
+      }, [inBand, right.length, top])
+
+      React.useEffect(() => () => {
+        for (const el of tray.cells.values()) if (el.parentNode) el.parentNode.removeChild(el)
+        tray.cells.clear()
+        if (tray.leftStack && tray.leftStack.parentNode) tray.leftStack.parentNode.removeChild(tray.leftStack)
+        tray.leftStack = null
+      }, [])
+
+      const nodes = []
+      if (inBand) {
+        const style = {
+          position: 'fixed',
+          top,
+          bottom: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: STACK_GAP,
+          minWidth: 0,
+          boxSizing: 'border-box',
+          overflow: 'visible',
+          pointerEvents: 'none',
+          zIndex: 10000,
+        }
+        style.width = plan.width
+        if (plan.mode === 'inner') style.left = plan.left
+        else style.right = Math.max(GAP, window.innerWidth - plan.rightEdge)
+        if (scrolls) {
+          const gutter = SHADOW_GUTTER
+          style.top = top - gutter
+          style.height = Math.max(0, window.innerHeight - 8 - top) + gutter * 2
+          style.bottom = 'auto'
+          style.width = plan.width + gutter * 2
+          if (style.left !== undefined) style.left -= gutter
+          if (style.right !== undefined) style.right -= gutter
+          style.padding = gutter
+          style.overflowY = 'auto'
+          style.overflowX = 'hidden'
+          style.scrollbarWidth = 'none'
+        }
+        nodes.push(h('div', {
+          key: 'band',
+          'data-panel-dock-strip': '',
+          'data-panel-dock-scrolls': scrolls ? '' : undefined,
+          ref: band,
+          style,
+        }))
+      }
+      for (const panel of all) {
+        nodes.push(createPortal(renderPanel(panel), cellOf(panel.id), panel.id))
+      }
+      return h(React.Fragment, null, nodes)
+    }
+
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-panel-dock: locale')
       T = ctx.locale.bind(NS)
+      // The tray keeps cards mounted when they change hosts; without portals the dock
+      // falls back to rendering each host directly (0.3.x behaviour, cards remount).
+      const leftHost = createPortal ? LeftSlot : LeftHost
+      const rightHost = createPortal ? TrayHost : RightHost
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
         name: 'sidebar.footer.action', id: 'panel-dock-left', order: 900, locale: NS,
-      }, LeftHost))
+      }, leftHost))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay', id: 'panel-dock-right', order: 40, locale: NS,
-      }, RightHost))
+      }, rightHost))
       try {
         window.__dshPanelDock = {
           version: VERSION,

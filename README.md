@@ -102,7 +102,11 @@ the conversation area's right edge — it never draws on that panel.
 4. Give it an **intrinsic height** in both hosts. The dock supplies width, flex reset and the 6px
    stack gap, nothing more: `order` and `height` in a definition are accepted for compatibility but
    have no layout effect in 0.3.x.
-5. Declare `minWidth` (default 280). It is your statement of the width below which your content
+5. **Do not depend on your DOM parent.** Since 0.4.0 each card lives in a container that
+   the dock *moves* between the sidebar stack and the band, so that switching sides never
+   remounts you (your state and scroll survive). Parent selectors, `closest()` lookups for
+   the host, and anything positional that assumes a fixed DOM ancestry will break.
+6. Declare `minWidth` (default 280). It is your statement of the width below which your content
    stops being useful — the dock never renders you narrower in the **right band** and never guesses
    your number. **It does not apply to the left stack**: there the dock gives you the sidebar's
    width (typically ~264px, the host's and the user's to change), so a card that needs 280 will
@@ -153,7 +157,7 @@ old copy.
 
 ## Status
 
-`0.3.23`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.4.0`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License

@@ -16,7 +16,7 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `github.com/Awenforever/dsh-panel-dock` |
-| 版本 | `0.3.23`（…0.3.21 最小可读宽度 280 + 克制侵入；0.3.22–0.3.23 把最小可读宽度变成**面板声明字段** `minWidth`） |
+| 版本 | `0.4.0`（0.3.21 最小可读宽度；0.3.22–23 `minWidth` 声明字段；**0.4.0 渲染改为 portal 托盘，切边不再重挂卡片**） |
 | npm | **未发布** |
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
@@ -26,6 +26,18 @@
 | 监听器 | `window.__dshPanelDockListeners`（Set） |
 
 `client.js` 是唯一运行时代码；`dock-core.js` 只服务单元测试（client 模块加载器不支持相对 require，核心逻辑在 client.js 内联了一份）。
+
+## 2.1 渲染架构（0.4.0）
+
+卡片**不**由左/右两个宿主直接渲染，而是全部渲染在一个挂在 `shell.overlay` 的 **Tray** 里：
+
+- 每张卡一个固定容器 `div[data-panel-dock-cell]`，卡片经 `createPortal` 渲染进容器；
+- 左宿主只提供一个占位 `div[data-panel-dock-left-slot]`（`display:contents`），Tray 把容器 `appendChild/insertBefore` 进 `div[data-panel-dock-left]` 或右带；
+- 换边时**只移动容器节点**，React 不 remount → 卡片内部 state（含数据快照）与滚动位置都保住；
+- 实测依据：把已渲染、已取数的卡片纯 DOM 移动父节点，内容与 `loading` 状态原样（2s/5s 两次采样）；真机 0.4.0 切边全程未出现「加载中…」。
+- `require('react-dom')` 拿不到 `createPortal` 时（老宿主），自动退回 0.3.x 的两宿主直渲路径——卡片会 remount，但功能不丢。
+
+**对卡片的额外要求**：不要依赖 DOM 父节点（容器会在左栈/右带之间搬动）。父选择器、`closest()` 找宿主、依赖 DOM 层级定位的写法都会失效。
 
 ## 3. 公开 API（消费者唯一契约）
 
@@ -169,12 +181,8 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 - npm 是否发布（用户尚未批准）。仓库目前没有任何 tag，`v0.3.12` 是第一个。
 - `dock-core.js` + `test/dock.test.js` 仍在测**已删除**的模型（width / collapse / open / height 模式 / order 排序）：10/10 绿但不覆盖任何现役几何。要么删、要么按现役逻辑（side 解析 + 带宽公式）重写，待用户定。
 - 左侧栈溢出未验证（宿主 sidebar 自身是否滚动）——右侧已解决，左侧未测。
-- 左右切换会重挂卡片（跨两个宿主必然 remount），实测：卡片出现 7–17ms，但会取数的卡（ustc-quota）要 ~2.1s 才把「加载中…」变成数据。
-  彻底修法：把所有卡放进一个 **portal 托盘**（Tray 只挂载一次），每张卡一个固定容器 div，切边时用 `appendChild` **移动容器**——React 看不见容器变化，就不会 remount。
-  前置假设已实测（2026-11-19，path F）：把正在渲染、已取到数据的 ustc-quota 节点纯 DOM 移动到别的父节点，内容与数据原样保留、`loading` 始终 false（5s 后仍如此）。
-  两个消费者都不依赖宿主 React context（quota 用模块级 `subscribeActiveSession` + `useSyncExternalStore`；advisor 无 context），所以 portal 的主要理论风险不适用于当前消费方。
-  剩余风险：React 事件会冒到托盘而不是宿主树（依赖「点外面关闭」的宿主逻辑可能受影响）；容器跨树移动后的样式继承差异（今天切边本来就跨树，非新增）。
-  未做，待用户点头。
+- 0.4.0 的六态验证记录：inner（2571 宽 → 480）、intrude（1887 宽 → 280）、outer（VM 合成锚点 → 480）、fallback（470 宽 → 全部回左侧栈、无条带）、mixed、overflow（滚动 + 阴影留白）。
+- **已解决（0.4.0）**：左右切换重挂卡片 → 改 portal 托盘后实测不复现（`sameNode: true`、切边全程无「加载中…」）。遗留观察项：React 事件现在冒泡到 Tray 而不是宿主树，若将来有宿主逻辑依赖「侧栏内点击冒泡」，需要复核。
 - 侵入时会盖住轮次条（用户允许）；轮次条在那一段不可点。
 - 回落左侧栈只在「280 > 对话列宽 50%」时发生；此时卡自己的「移到右侧」按了没有可见效果。
 
