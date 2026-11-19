@@ -72,9 +72,13 @@ Measured from the shipped layout, never assumed:
 
 ```
 width = min(max(span, 200), 480, anchors.right - 8)   // span = anchors.right - anchors.left
-width > span  → pinned by its right edge 6px left of the transcript splitter: the card grows over
-                the transcript edge, but it never covers the splitter or the turn rail
-otherwise     → pinned to the handle
+inner = railLeft - 6 - (handleRight + 6)     // gutter between the handle and the turn rail
+outer = (areaRight - 6) - (railRight + 6)    // gutter between the rail and the column's edge
+
+inner >= 200  → pinned to the handle (the usual case), width = min(inner, 480)
+else outer>=200 → pinned to the column's right edge, width = min(outer, 480)
+else          → right-side panels render in the sidebar stack instead: a card reads better
+                there than squeezed over the transcript, and the rail stays usable
 ```
 
 The band is `pointer-events: none` and cards re-enable their own; it never swallows a click meant
@@ -135,7 +139,7 @@ old copy.
 
 ## Status
 
-`0.3.15`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
+`0.3.17`. In use by `dsh-ustc-quota` 1.2.7 and `dsh-codex-advisor` 0.10.0, both on the left by
 default. Not published to npm.
 
 ## License

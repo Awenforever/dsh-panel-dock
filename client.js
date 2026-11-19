@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.3.15'
+    const VERSION = '0.3.17'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -137,7 +137,9 @@ window.__ModuleLoader__.load({
     // Left panels live in the sidebar footer, in registration order.
     function LeftHost() {
       const layout = useRegistry()
-      const items = layout.filter((panel) => sideOf(panel.id, panel.side) === 'left')
+      // No room on the right (narrow conversation, or the right sidebar is open): a card
+      // reads better here than squeezed over the transcript.
+      const items = layout.filter((panel) => placement.fallback || sideOf(panel.id, panel.side) === 'left')
       if (items.length === 0) return null
       return h('div', {
         'data-panel-dock-left': '',
@@ -166,6 +168,7 @@ window.__ModuleLoader__.load({
       let top = 8
       let handleRight = null
       let handleLeft = null
+      let railRight = null
       let areaRight = null
       try {
         const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
@@ -180,35 +183,43 @@ window.__ModuleLoader__.load({
         // The turn rail sits to the right of the band; other turn-navigation buttons live
         // on its left edge. Keep the smallest x that is still right of the handle -- a wide
         // conversation can leave only a few pixels, so the tolerance has to stay small.
-        const railXs = [...document.querySelectorAll('button[aria-label]')]
+        const railMarks = [...document.querySelectorAll('button[aria-label]')]
           .filter((el) => /turnNavigation|轮次|跳转/i.test(el.getAttribute('aria-label') || ''))
-          .map((el) => Math.round(box(el).left))
+          .map((el) => ({ left: Math.round(box(el).left), right: Math.round(box(el).right) }))
           // Everything to the right of the handle belongs to the rail side; a squeezed
           // band can leave the rail a single pixel right of the handle.
-          .filter((x) => handleRight === null || x > handleRight)
-        const rail = railColumn(railXs)
-        if (rail !== null) right = rail - GAP
+          .filter((mark) => handleRight === null || mark.left > handleRight)
+        const rail = railColumn(railMarks)
+        if (rail !== null) {
+          right = rail.left - GAP
+          railRight = rail.right
+        }
         const tabs = document.querySelector('[data-conversation-tabs]')
         if (tabs) {
           top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
-          // The right sidebar (开始 / 终端 / 浏览器) owns the window's right side. The band
-          // belongs to the conversation area, so walk up from the tabs and take the
-          // nearest ancestor that stops short of the window: that edge is the hard limit.
+          // The right sidebar (开始 / 终端 / 浏览器) owns the window's right side. The column
+          // that holds the tabs is the conversation area: climb to the outermost ancestor
+          // that still ends where the column ends (the tab strip itself is padded, so it
+          // is skipped), and take that edge as the hard limit.
           let node = tabs.parentElement
+          let columnRight = null
           while (node && node !== document.body) {
             const rect = box(node)
-            if (rect.width > 0 && rect.right < window.innerWidth - 2) { areaRight = Math.round(rect.right); break }
+            if (rect.width === 0 || rect.height < 40) { node = node.parentElement; continue }
+            if (columnRight === null) columnRight = rect.right
+            else if (Math.abs(rect.right - columnRight) > 3) break
             node = node.parentElement
           }
+          if (columnRight !== null && columnRight < window.innerWidth - 2) areaRight = Math.round(columnRight)
         }
       } catch {}
-      return { left, right, top, handleLeft, areaRight }
+      return { left, right, top, handleLeft, railRight, areaRight }
     }
 
     function sameAnchors(a, b) {
       if (!a || !b) return a === b
       return a.left === b.left && a.right === b.right && a.top === b.top
-        && a.handleLeft === b.handleLeft && a.areaRight === b.areaRight
+        && a.handleLeft === b.handleLeft && a.railRight === b.railRight && a.areaRight === b.areaRight
     }
 
     // What the cards want, gap included.
@@ -223,17 +234,54 @@ window.__ModuleLoader__.load({
     // ("跳转到该消息", ...) match the same words but stand alone, and one of them sitting
     // left of the rail used to drag the whole band left with it -- cards then rendered
     // at the 200px floor while their real whitespace stayed empty. Pick the column.
-    function railColumn(xs) {
-      if (!xs.length) return null
+    function railColumn(marks) {
+      if (!marks.length) return null
       const groups = []
-      for (const x of xs) {
-        const group = groups.find((g) => Math.abs(g.x - x) <= 2)
-        if (group) { group.count += 1 } else groups.push({ x, count: 1 })
+      for (const mark of marks) {
+        const group = groups.find((g) => Math.abs(g.left - mark.left) <= 2)
+        if (group) {
+          group.count += 1
+          group.right = Math.max(group.right, mark.right)
+        } else {
+          groups.push({ left: mark.left, right: mark.right, count: 1 })
+        }
       }
-      const columns = groups.filter((g) => g.count >= 4).sort((a, b) => (b.count - a.count) || (a.x - b.x))
-      if (columns.length) return columns[0].x
-      // A short conversation can have a single mark; fall back to the old rule.
-      return Math.min(...xs)
+      const columns = groups.filter((g) => g.count >= 4).sort((a, b) => (b.count - a.count) || (a.left - b.left))
+      if (columns.length) return columns[0]
+      const left = Math.min(...marks.map((m) => m.left))
+      return { left, right: Math.max(...marks.filter((m) => Math.abs(m.left - left) <= 2).map((m) => m.right)) }
+    }
+
+    // Where right-side cards can live: the gutter left of the turn rail, the gutter right
+    // of it, or -- when neither can hold a readable card -- back in the sidebar stack.
+    // A card squeezed over the transcript is not an option: it hides text to buy a width
+    // that is still too small to read.
+    const placement = { fallback: false }
+    function setFallback(next) {
+      if (placement.fallback === next) return
+      placement.fallback = next
+      emit()
+    }
+
+    function planBand(anchors) {
+      const vw = typeof window === 'undefined' ? 0 : window.innerWidth
+      const areaEdge = Math.min(vw, anchors && anchors.areaRight ? anchors.areaRight : vw)
+      const limit = areaEdge - GAP
+      const inner = anchors && anchors.left !== null && anchors.right !== null ? anchors.right - anchors.left : null
+      if (inner !== null && inner >= MIN_PANEL_WIDTH) {
+        return { mode: 'inner', left: anchors.left, width: Math.min(inner, MAX_PANEL_WIDTH), limit }
+      }
+      const outer = anchors && anchors.railRight !== null && anchors.railRight !== undefined
+        ? limit - (anchors.railRight + GAP)
+        : null
+      if (outer !== null && outer >= MIN_PANEL_WIDTH) {
+        return { mode: 'outer', rightEdge: limit, width: Math.min(outer, MAX_PANEL_WIDTH), limit }
+      }
+      if (inner === null) {
+        const width = Math.min(MAX_PANEL_WIDTH, limit - GAP)
+        if (width >= MIN_PANEL_WIDTH) return { mode: 'edge', rightEdge: limit, width, limit }
+      }
+      return { mode: 'fallback', width: 0, limit }
     }
 
     function RightHost() {
@@ -267,6 +315,10 @@ window.__ModuleLoader__.load({
 
       const items = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
       const top = anchors ? anchors.top : 8
+      const plan = planBand(anchors)
+
+      // Publish the decision so the sidebar stack can take the cards over.
+      React.useEffect(() => { setFallback(plan.mode === 'fallback') })
 
       // A stack that fits stays a plain, non-clipping column, because a card may draw
       // outside its own box (its shadow). Scroll only when the cards exceed the column.
@@ -289,21 +341,10 @@ window.__ModuleLoader__.load({
       }, [items.length, top])
 
       // An empty column must cost nothing: no panels, no strip, no reserved width.
-      if (items.length === 0) return null
+      // The same goes for a column the band cannot hold: the cards moved to the sidebar.
+      if (items.length === 0 || plan.mode === 'fallback') return null
 
-      const anchored = anchors && anchors.left !== null && anchors.right !== null
-      const span = anchored ? anchors.right - anchors.left : 0
-      // The band may never leave the conversation area: with the right sidebar open
-      // (开始 / 终端 / 浏览器) the window's right edge belongs to that panel, and a card
-      // drawn there covers a foreign surface.
-      const areaEdge = Math.min(window.innerWidth, anchors && anchors.areaRight ? anchors.areaRight : window.innerWidth)
-      const bandRight = Math.min(anchored ? anchors.right : areaEdge - GAP, areaEdge - GAP)
-      // A wide conversation squeezes the band away. The panel keeps a usable width by
-      // growing leftwards over the transcript instead of vanishing; the turn rail stays
-      // clear, so the right edge never moves past it.
-      const width = anchored
-        ? Math.min(Math.max(span, MIN_PANEL_WIDTH), MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, bandRight - 8))
-        : Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, areaEdge - GAP * 2))
+      const width = plan.width
 
       const style = {
         position: 'fixed',
@@ -321,20 +362,12 @@ window.__ModuleLoader__.load({
         zIndex: 10000,
       }
       style.width = width
-      if (anchored) {
-        if (width > span + 0.5) {
-          // Squeezed: let the card cover the transcript edge, but stop at the splitter
-          // -- covering it would leave no visible way to widen the conversation back.
-          const edge = Math.min(anchors.handleLeft !== null && anchors.handleLeft !== undefined
-            ? anchors.handleLeft - GAP
-            : bandRight, bandRight)
-          style.right = Math.max(GAP, window.innerWidth - edge)
-        } else {
-          // Roomy: follow the transcript handle, leaving the surplus band near the rail.
-          style.left = anchors.left
-        }
+      if (plan.mode === 'inner') {
+        // The gutter between the transcript handle and the turn rail.
+        style.left = plan.left
       } else {
-        style.right = Math.max(8, window.innerWidth - bandRight)
+        // Right of the rail (or, before any conversation is measured, the area's edge).
+        style.right = Math.max(GAP, window.innerWidth - plan.rightEdge)
       }
 
       if (scrolls) {
