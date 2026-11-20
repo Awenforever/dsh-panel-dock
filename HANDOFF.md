@@ -21,7 +21,7 @@
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
 | 持久化 | `localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" \| "right" } }` |
-| 已部署 | invictus（`dsh plugin list` 实测 0.3.13）/ VM win11-test 0.3.12 |
+| 已部署 | invictus 0.4.0（重启后 CDP 实测 `window.__dshPanelDock.version`）/ VM win11-test 0.4.0 |
 | 注册表 | `window.__dshPanelDockRegistry`（Map，跨热更新存活） |
 | 监听器 | `window.__dshPanelDockListeners`（Set） |
 
@@ -173,14 +173,15 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 
 | 插件 | 版本 | 说明 |
 |---|---|---|
-| `dsh-ustc-quota` | 1.2.7 | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变） |
-| `dsh-codex-advisor` | 0.10.1 | `PANEL_DOCK_SPEC` 钉的是 `a8c789c` = panel-dock **0.1.0（takeover 时代，`inject('main')`）**：用户点它的「安装 panel-dock」会把已装新版**降级**回接管 main。归属会话 `session-3e48f83b`（DSH-Codex-Advisor）已在 **0.10.1**（2026-11-18）修掉：钉 tag `v0.3.12` + 「已装 ≥ 目标就拒绝安装」守卫。已装的 0.10.1 以下的版本仍有此按钮，别点。 |
+| `dsh-ustc-quota` | 1.2.7（invictus）/ 1.2.8（已发） | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变）。1.2.8 起声明 `minWidth: 280`（带断言）；invictus 仍 1.2.7，等它并到 rc.5 重启一起装。 |
+| `dsh-codex-advisor` | 0.10.2 | 归属会话 `session-3e48f83b`（DSH-Codex-Advisor）。0.10.1 起钉 tag（现为 `v0.3.23`）+「已装 ≥ 目标就拒绝安装」守卫；**2026-11-20 在 invictus 实机实测通过**：POST `/plugins/dsh-codex-advisor/install-panel-dock` → `{application:"up-to-date", installedVersion:"0.4.0", targetVersion:"0.3.23", reload:false}`，panel-dock 未被降级。0.10.2 声明 `minWidth: 260`（带断言）。0.11.0 开发中，会把 pin 换到 `v0.4.0`。 |
 
 ## 10. 未决项
 
-- npm 是否发布（用户尚未批准）。仓库目前没有任何 tag，`v0.3.12` 是第一个。
+- npm 是否发布（用户尚未批准）。tag 已有 `v0.3.12` / `v0.3.13` / `v0.3.15` / `v0.3.17` / `v0.3.21` / `v0.3.23` / `v0.4.0`。
 - `dock-core.js` + `test/dock.test.js` 仍在测**已删除**的模型（width / collapse / open / height 模式 / order 排序）：10/10 绿但不覆盖任何现役几何。要么删、要么按现役逻辑（side 解析 + 带宽公式）重写，待用户定。
 - 左侧栈溢出未验证（宿主 sidebar 自身是否滚动）——右侧已解决，左侧未测。
+- 无 `createPortal` 的旧宿主退回路径只做过静态核对（`apply()` 二选一 + 旧实现原样），**没有运行时验证**：手上没有那种宿主。
 - 0.4.0 的六态验证记录：inner（2571 宽 → 480）、intrude（1887 宽 → 280）、outer（VM 合成锚点 → 480）、fallback（470 宽 → 全部回左侧栈、无条带）、mixed、overflow（滚动 + 阴影留白）。
 - **已解决（0.4.0）**：左右切换重挂卡片 → 改 portal 托盘后实测不复现（`sameNode: true`、切边全程无「加载中…」）。遗留观察项：React 事件现在冒泡到 Tray 而不是宿主树，若将来有宿主逻辑依赖「侧栏内点击冒泡」，需要复核。
 - 侵入时会盖住轮次条（用户允许）；轮次条在那一段不可点。
