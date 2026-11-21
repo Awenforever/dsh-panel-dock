@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.0'
+    const VERSION = '0.6.2'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -41,6 +41,11 @@ window.__ModuleLoader__.load({
     // A card may eat into the conversation, but not more than half of it: past that the
     // card belongs in the sidebar stack instead of on top of the text.
     const MAX_COVER_RATIO = 0.5
+    // A conversation switch tears the transcript down and rebuilds it, so for a few frames
+    // the turn rail has no marks at all. Remembering where it was keeps the band's width
+    // stable across that gap instead of letting inner mode collapse to intrude.
+    const RAIL_MEMORY_MS = 1500
+    let railMemory = null
     // The band must not clip: any scroll container turns its children's box-shadow into
     // a hard-edged rectangle. Cards own their shadow, and it has to fall naturally the
     // way it does in the sidebar.
@@ -217,6 +222,7 @@ window.__ModuleLoader__.load({
       let railRight = null
       let areaRight = null
       let areaLeft = null
+      let railInfo = null
       try {
         const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
           .find((el) => el.getAttribute('data-side') === 'right')
@@ -237,10 +243,7 @@ window.__ModuleLoader__.load({
           // band can leave the rail a single pixel right of the handle.
           .filter((mark) => handleRight === null || mark.left > handleRight)
         const rail = railColumn(railMarks)
-        if (rail !== null) {
-          right = rail.left - GAP
-          railRight = rail.right
-        }
+        railInfo = rail !== null ? { right: rail.left - GAP, railRight: rail.right } : null
         const tabs = document.querySelector('[data-conversation-tabs]')
         if (tabs) {
           top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
@@ -267,6 +270,20 @@ window.__ModuleLoader__.load({
               up = up.parentElement
             }
           }
+        }
+        if (railInfo !== null) {
+          right = railInfo.right
+          railRight = railInfo.railRight
+          railMemory = { right, railRight, handleRight, areaRight, at: Date.now() }
+        } else if (
+          railMemory !== null
+          && Date.now() - railMemory.at < RAIL_MEMORY_MS
+          && railMemory.handleRight === handleRight
+          && railMemory.areaRight === areaRight
+        ) {
+          // Same window geometry, rail momentarily missing: keep the last known rail.
+          right = railMemory.right
+          railRight = railMemory.railRight
         }
       } catch {}
       return { left, right, top, handleLeft, handleRight, railRight, areaRight, areaLeft }
@@ -327,7 +344,13 @@ window.__ModuleLoader__.load({
       const areaEdge = Math.min(vw, anchors && anchors.areaRight ? anchors.areaRight : vw)
       const limit = areaEdge - GAP
       const hasRail = Boolean(anchors) && anchors.railRight !== null && anchors.railRight !== undefined
-      const inner = anchors && anchors.left !== null && anchors.right !== null ? anchors.right - anchors.left : null
+      // A conversation without turns has no rail yet. That is not "no space": the column
+      // simply runs to its own right edge, and that edge is the boundary the band must
+      // respect. Treating the missing rail as a wall collapsed the band into the sidebar
+      // for the first frames of every new conversation, then brought it back when the
+      // rail appeared -- the "shrink in and come back" the user saw.
+      const innerRight = anchors && anchors.right !== null ? anchors.right : limit
+      const inner = anchors && anchors.left !== null ? innerRight - anchors.left : null
       // The whitespace is used where it exists.
       if (inner !== null && inner >= required) {
         return { mode: 'inner', left: anchors.left, width: Math.min(inner, MAX_PANEL_WIDTH), limit }
