@@ -1,217 +1,141 @@
-# HANDOFF — dsh-panel-dock
+﻿# HANDOFF 鈥?dsh-panel-dock
 
-> 读者：接手本插件的 agent。本文是**当前状态**的唯一入口，写于 2026-11-18（panel-dock 0.3.9）。
-> 历史过程在协作中心 `projects/plugins/dsh-ustc-quota/LOG.md` E78–E89（该仓库正在被另一会话重构，读取时按标题定位）。
-
-## 1. 定位与边界
-
-这是一个**纯槽位协商插件**：别的插件把卡片注册进来，它决定卡片渲染在左侧栏还是右侧带。
-
-- **不做**：导航项、按钮、弹窗、快捷键、开关。用户在界面上能看到的每个交互都属于卡片自己。
-- **不做**：接管 `main` 槽位（takeover 方案已删除，详见 §6）。
-- **不做**：自造间距、改卡片配色/阴影形状。
-
-## 2. 硬事实
-
-| 项 | 值 |
+> 璇昏€咃細鎺ユ墜鏈彃浠剁殑 agent銆傛湰鏂囨槸**褰撳墠鐘舵€?*鐨勫敮涓€鍏ュ彛锛屽啓浜?2026-11-18锛坧anel-dock 0.3.9锛夈€?> 鍘嗗彶杩囩▼鍦ㄥ崗浣滀腑蹇?`projects/plugins/dsh-ustc-quota/LOG.md` E78鈥揈89锛堣浠撳簱姝ｅ湪琚彟涓€浼氳瘽閲嶆瀯锛岃鍙栨椂鎸夋爣棰樺畾浣嶏級銆?
+## 1. 瀹氫綅涓庤竟鐣?
+杩欐槸涓€涓?*绾Ы浣嶅崗鍟嗘彃浠?*锛氬埆鐨勬彃浠舵妸鍗＄墖娉ㄥ唽杩涙潵锛屽畠鍐冲畾鍗＄墖娓叉煋鍦ㄥ乏渚ф爮杩樻槸鍙充晶甯︺€?
+- **涓嶅仛**锛氬鑸」銆佹寜閽€佸脊绐椼€佸揩鎹烽敭銆佸紑鍏炽€傜敤鎴峰湪鐣岄潰涓婅兘鐪嬪埌鐨勬瘡涓氦浜掗兘灞炰簬鍗＄墖鑷繁銆?- **涓嶅仛**锛氭帴绠?`main` 妲戒綅锛坱akeover 鏂规宸插垹闄わ紝璇﹁ 搂6锛夈€?- **涓嶅仛**锛氳嚜閫犻棿璺濄€佹敼鍗＄墖閰嶈壊/闃村奖褰㈢姸銆?
+## 2. 纭簨瀹?
+| 椤?| 鍊?|
 |---|---|
-| 仓库 | `github.com/Awenforever/dsh-panel-dock` |
-| 版本 | `0.5.1`（…0.4.1 `order` 排序；0.5.0 可选 `CardShell` + 术语统一；0.5.1 修 README 示例 + children 警告） |
-| npm | **未发布** |
-| 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
-| 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
-| 持久化 | `localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" \| "right" } }` |
-| 已部署 | invictus 0.5.0（CDP 实测 `window.__dshPanelDock.version`）/ VM win11-test 0.4.0（机器离线，未更新） |
-| 注册表 | `window.__dshPanelDockRegistry`（Map，跨热更新存活） |
-| 监听器 | `window.__dshPanelDockListeners`（Set） |
+| 浠撳簱 | `github.com/Awenforever/dsh-panel-dock` |
+| 鐗堟湰 | `0.5.1`锛堚€?.4.1 `order` 鎺掑簭锛?.5.0 鍙€?`CardShell` + 鏈缁熶竴锛?.5.1 淇?README 绀轰緥 + children 璀﹀憡锛?|
+| npm | **鏈彂甯?* |
+| 杩愯杞戒綋 | client 妯″潡锛歚window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
+| 瀹夸富妲戒綅 | `sidebar.footer.action`锛堝乏鏍堬級銆乣shell.overlay`锛堝彸甯︼級 |
+| 鎸佷箙鍖?| `localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" \| "right" } }` |
+| 宸查儴缃?| invictus 0.5.0锛圕DP 瀹炴祴 `window.__dshPanelDock.version`锛? VM win11-test 0.4.0锛堟満鍣ㄧ绾匡紝鏈洿鏂帮級 |
+| 娉ㄥ唽琛?| `window.__dshPanelDockRegistry`锛圡ap锛岃法鐑洿鏂板瓨娲伙級 |
+| 鐩戝惉鍣?| `window.__dshPanelDockListeners`锛圫et锛?|
 
-`client.js` 是唯一运行时代码；`dock-core.js` 只服务单元测试（client 模块加载器不支持相对 require，核心逻辑在 client.js 内联了一份）。
+`client.js` 鏄敮涓€杩愯鏃朵唬鐮侊紱`dock-core.js` 鍙湇鍔″崟鍏冩祴璇曪紙client 妯″潡鍔犺浇鍣ㄤ笉鏀寔鐩稿 require锛屾牳蹇冮€昏緫鍦?client.js 鍐呰仈浜嗕竴浠斤級銆?
+## 2.1 娓叉煋鏋舵瀯锛?.4.0锛?
+鍗＄墖**涓?*鐢卞乏/鍙充袱涓涓荤洿鎺ユ覆鏌擄紝鑰屾槸鍏ㄩ儴娓叉煋鍦ㄤ竴涓寕鍦?`shell.overlay` 鐨?**Tray** 閲岋細
 
-## 2.1 渲染架构（0.4.0）
-
-卡片**不**由左/右两个宿主直接渲染，而是全部渲染在一个挂在 `shell.overlay` 的 **Tray** 里：
-
-- 每张卡一个固定容器 `div[data-panel-dock-cell]`，卡片经 `createPortal` 渲染进容器；
-- 左宿主只提供一个占位 `div[data-panel-dock-left-slot]`（`display:contents`），Tray 把容器 `appendChild/insertBefore` 进 `div[data-panel-dock-left]` 或右带；
-- 换边时**只移动容器节点**，React 不 remount → 卡片内部 state（含数据快照）与滚动位置都保住；
-- 实测依据：把已渲染、已取数的卡片纯 DOM 移动父节点，内容与 `loading` 状态原样（2s/5s 两次采样）；真机 0.4.0 切边全程未出现「加载中…」。
-- `require('react-dom')` 拿不到 `createPortal` 时（老宿主），自动退回 0.3.x 的两宿主直渲路径——卡片会 remount，但功能不丢。
-
-**对卡片的额外要求**：不要依赖 DOM 父节点（容器会在左栈/右带之间搬动）。父选择器、`closest()` 找宿主、依赖 DOM 层级定位的写法都会失效。
-
-## 2.2 术语（2026-11-21 用户统一）
-
-| 词 | 指什么 | 宿主 |
+- 姣忓紶鍗′竴涓浐瀹氬鍣?`div[data-panel-dock-cell]`锛屽崱鐗囩粡 `createPortal` 娓叉煋杩涘鍣紱
+- 宸﹀涓诲彧鎻愪緵涓€涓崰浣?`div[data-panel-dock-left-slot]`锛坄display:contents`锛夛紝Tray 鎶婂鍣?`appendChild/insertBefore` 杩?`div[data-panel-dock-left]` 鎴栧彸甯︼紱
+- 鎹㈣竟鏃?*鍙Щ鍔ㄥ鍣ㄨ妭鐐?*锛孯eact 涓?remount 鈫?鍗＄墖鍐呴儴 state锛堝惈鏁版嵁蹇収锛変笌婊氬姩浣嶇疆閮戒繚浣忥紱
+- 瀹炴祴渚濇嵁锛氭妸宸叉覆鏌撱€佸凡鍙栨暟鐨勫崱鐗囩函 DOM 绉诲姩鐖惰妭鐐癸紝鍐呭涓?`loading` 鐘舵€佸師鏍凤紙2s/5s 涓ゆ閲囨牱锛夛紱鐪熸満 0.4.0 鍒囪竟鍏ㄧ▼鏈嚭鐜般€屽姞杞戒腑鈥︺€嶃€?- `require('react-dom')` 鎷夸笉鍒?`createPortal` 鏃讹紙鑰佸涓伙級锛岃嚜鍔ㄩ€€鍥?0.3.x 鐨勪袱瀹夸富鐩存覆璺緞鈥斺€斿崱鐗囦細 remount锛屼絾鍔熻兘涓嶄涪銆?
+**瀵瑰崱鐗囩殑棰濆瑕佹眰**锛氫笉瑕佷緷璧?DOM 鐖惰妭鐐癸紙瀹瑰櫒浼氬湪宸︽爤/鍙冲甫涔嬮棿鎼姩锛夈€傜埗閫夋嫨鍣ㄣ€乣closest()` 鎵惧涓汇€佷緷璧?DOM 灞傜骇瀹氫綅鐨勫啓娉曢兘浼氬け鏁堛€?
+## 2.2 鏈锛?026-11-21 鐢ㄦ埛缁熶竴锛?
+| 璇?| 鎸囦粈涔?| 瀹夸富 |
 |---|---|---|
-| **侧栏卡片**（sidebar card） | dock 承载的卡片，左栈或右带 | **panel-dock** |
-| **主区域面板**（main-area panel） | 整页视图（如 dsh-loci 的五视图） | DSH 宿主，**不在 dock** |
+| **渚ф爮鍗＄墖**锛坰idebar card锛?| dock 鎵胯浇鐨勫崱鐗囷紝宸︽爤鎴栧彸甯?| **panel-dock** |
+| **涓诲尯鍩熼潰鏉?*锛坢ain-area panel锛?| 鏁撮〉瑙嗗浘锛堝 dsh-loci 鐨勪簲瑙嗗浘锛?| DSH 瀹夸富锛?*涓嶅湪 dock** |
 
-单独说 "panel" 时一律指主区域面板；dock 里的东西一律叫侧栏卡片。组件命名同理：`CardShell`，不是 PanelShell。
-
-## 3. 公开 API（消费者唯一契约）
-
+鍗曠嫭璇?"panel" 鏃朵竴寰嬫寚涓诲尯鍩熼潰鏉匡紱dock 閲岀殑涓滆タ涓€寰嬪彨渚ф爮鍗＄墖銆傜粍浠跺懡鍚嶅悓鐞嗭細`CardShell`锛屼笉鏄?PanelShell銆?
+## 3. 鍏紑 API锛堟秷璐硅€呭敮涓€濂戠害锛?
 ```js
 window.__dshPanelDock = {
-  version,                 // 字符串
-  define(definition),      // 返回 dispose()
+  version,                 // 瀛楃涓?  define(definition),      // 杩斿洖 dispose()
   panels(),                // [{ id, title, order, side, minWidth, version }]
   getSide(id),             // 'left' | 'right'
-  setSide(id, side),       // 返回最终 side
-  toggleSide(id),          // 返回新 side
-  subscribe(listener),     // 返回 unsubscribe
+  setSide(id, side),       // 杩斿洖鏈€缁?side
+  toggleSide(id),          // 杩斿洖鏂?side
+  subscribe(listener),     // 杩斿洖 unsubscribe
 }
 ```
 
-`define({ id, title, order, side, minWidth, version, component })`：`id` 非空、`component` 必须是函数；同 id 重复注册会覆盖。
-`minWidth`（0.3.22）：面板声明「低于这个宽度我的内容就不再有意义」，正整数 px，钳到 [120, 480]，缺省 280。
-dock 保证**右带**里永不窄于它；空白不够时只取走差额。`panels()` 会把解析后的 `minWidth` 一并返回（左右两侧都返回，供调用方判断）。
-注意 `minWidth` **不约束左栈**：左栈宽度=侧边栏宽度（host/用户决定），dock 不能加宽。
-`order` 决定堆叠：**升序，缺省 100，同值保持注册序**（0.4.1）。`version`（字符串/数字，可选）由 `CardShell` 显示。
-`CardShell`（0.5.0/0.5.1）：可选共享顶栏组件，`h(dock.CardShell, { id, actions? })`；**只画顶栏**（logo=侧别切换 + 标题 + 版本），**不渲染 children**（故意，不是容器）。正确用法：卡片根 div 里先放 shell、再放自己的主体，两者是兄弟。传 children 会打一条 warning（0.5.1）而不是静默吞掉。已实测：渲染、点击换边、aria 文案翻转均正常。
+`define({ id, title, order, side, minWidth, version, component })`锛歚id` 闈炵┖銆乣component` 蹇呴』鏄嚱鏁帮紱鍚?id 閲嶅娉ㄥ唽浼氳鐩栥€?`minWidth`锛?.3.22锛夛細闈㈡澘澹版槑銆屼綆浜庤繖涓搴︽垜鐨勫唴瀹瑰氨涓嶅啀鏈夋剰涔夈€嶏紝姝ｆ暣鏁?px锛岄挸鍒?[120, 480]锛岀己鐪?280銆?dock 淇濊瘉**鍙冲甫**閲屾案涓嶇獎浜庡畠锛涚┖鐧戒笉澶熸椂鍙彇璧板樊棰濄€俙panels()` 浼氭妸瑙ｆ瀽鍚庣殑 `minWidth` 涓€骞惰繑鍥烇紙宸﹀彸涓や晶閮借繑鍥烇紝渚涜皟鐢ㄦ柟鍒ゆ柇锛夈€?娉ㄦ剰 `minWidth` **涓嶇害鏉熷乏鏍?*锛氬乏鏍堝搴?渚ц竟鏍忓搴︼紙host/鐢ㄦ埛鍐冲畾锛夛紝dock 涓嶈兘鍔犲銆?`order` 鍐冲畾鍫嗗彔锛?*鍗囧簭锛岀己鐪?100锛屽悓鍊间繚鎸佹敞鍐屽簭**锛?.4.1锛夈€俙version`锛堝瓧绗︿覆/鏁板瓧锛屽彲閫夛級鐢?`CardShell` 鏄剧ず銆?`CardShell`锛?.5.0/0.5.1锛夛細鍙€夊叡浜《鏍忕粍浠讹紝`h(dock.CardShell, { id, actions? })`锛?*鍙敾椤舵爮**锛坙ogo=渚у埆鍒囨崲 + 鏍囬 + 鐗堟湰锛夛紝**涓嶆覆鏌?children**锛堟晠鎰忥紝涓嶆槸瀹瑰櫒锛夈€傛纭敤娉曪細鍗＄墖鏍?div 閲屽厛鏀?shell銆佸啀鏀捐嚜宸辩殑涓讳綋锛屼袱鑰呮槸鍏勫紵銆備紶 children 浼氭墦涓€鏉?warning锛?.5.1锛夎€屼笉鏄潤榛樺悶鎺夈€傚凡瀹炴祴锛氭覆鏌撱€佺偣鍑绘崲杈广€乤ria 鏂囨缈昏浆鍧囨甯搞€?
+## 4. 闈㈡澘缁勪欢濂戠害
 
-## 4. 面板组件契约
+1. 娓叉煋**涓€涓牴鍏冪礌**锛屾妸鏀跺埌鐨?props 灞曞紑鍒板畠涓婇潰锛宍style` 鏀炬渶鍚庯細`h('div', Object.assign({}, rest, { style: Object.assign({}, style, {...}) }))`銆?2. **涓嶈**鑷繁瀹氫綅锛氭棤 `position: fixed`銆佹棤鍥哄畾瀹介珮銆佷笉瑕佺敤 margin 瀵规姉鐖剁骇銆?3. dock 浼氭敞鍏?`style`锛坄width/minWidth/boxSizing/flex:0 0 auto/order:0/margin:0/pointerEvents:auto`锛夈€傚崱鐗囪嚜甯︾殑澶栧３锛堣竟妗?鍦嗚/搴曡壊/闃村奖锛変繚鐣欍€?4. 宸︿晶瀹夸富鍙彁渚?`width: 100%`锛屾墍浠ラ潰鏉垮繀椤绘湁**鍥烘湁楂樺害**銆?5. **蹇呴』澹版槑 `minWidth`**锛堟垨鎺ュ彈榛樿 280锛夛細瀹冩槸銆屽唴瀹逛笉鍐嶆湁鎰忎箟銆嶇殑瀹藉害銆俤ock 鍙礋璐ｄ笉璁╁畠鏇寸獎锛屼笉璐熻矗鐚滀綘鐨勫唴瀹广€傛祴娉曡 搂8 鐨勫搴︽壂鎻忋€?6. **`minWidth` 鍙害鏉熷彸甯?*銆傚乏鏍堢殑瀹藉害=瀹夸富渚ц竟鏍忓搴︼紙鐢?host 涓庣敤鎴锋嫋鎷藉喅瀹氾紝瀹炴祴甯歌 264锛夛紝dock 鍙粰 `width:100%`锛屾棤鏉冨姞瀹解€斺€旀墍浠ヤ竴寮?`minWidth: 280` 鐨勫崱鏀惧湪宸︽爤閲岋紝264 鏃剁収鏍蜂細鎴柇銆傝淇濊瘉鍙锛屽緱璁╃敤鎴锋妸瀹冩斁鍙冲甫锛屾垨鎶婁晶杈规爮鎷栧銆?
+## 5. 鍑犱綍瑙勫垯
 
-1. 渲染**一个根元素**，把收到的 props 展开到它上面，`style` 放最后：`h('div', Object.assign({}, rest, { style: Object.assign({}, style, {...}) }))`。
-2. **不要**自己定位：无 `position: fixed`、无固定宽高、不要用 margin 对抗父级。
-3. dock 会注入 `style`（`width/minWidth/boxSizing/flex:0 0 auto/order:0/margin:0/pointerEvents:auto`）。卡片自带的外壳（边框/圆角/底色/阴影）保留。
-4. 左侧宿主只提供 `width: 100%`，所以面板必须有**固有高度**。
-5. **必须声明 `minWidth`**（或接受默认 280）：它是「内容不再有意义」的宽度。dock 只负责不让它更窄，不负责猜你的内容。测法见 §8 的宽度扫描。
-6. **`minWidth` 只约束右带**。左栈的宽度=宿主侧边栏宽度（由 host 与用户拖拽决定，实测常见 264），dock 只给 `width:100%`，无权加宽——所以一张 `minWidth: 280` 的卡放在左栈里，264 时照样会截断。要保证可读，得让用户把它放右带，或把侧边栏拖宽。
-
-## 5. 几何规则
-
-### 左侧（sidebar 栈）
-`sidebar.footer.action` 里的 flex column，`gap: 6`、`flex: 0 0 100%`（宿主 footer 是 nowrap flex row，不这么写会塌成几像素）。
-
-### 右侧（对话右侧空白带）
-
-锚点全部实测，来源于宿主自己的布局：
-
-| 边 | 规则 |
+### 宸︿晶锛坰idebar 鏍堬級
+`sidebar.footer.action` 閲岀殑 flex column锛宍gap: 6`銆乣flex: 0 0 100%`锛堝涓?footer 鏄?nowrap flex row锛屼笉杩欎箞鍐欎細濉屾垚鍑犲儚绱狅級銆?
+### 鍙充晶锛堝璇濆彸渚х┖鐧藉甫锛?
+閿氱偣鍏ㄩ儴瀹炴祴锛屾潵婧愪簬瀹夸富鑷繁鐨勫竷灞€锛?
+| 杈?| 瑙勫垯 |
 |---|---|
-| 左 | `.widthHandle[data-side="right"]` 的 `right + 6` |
-| 右 | 轮次条按钮最小 `x − 6`，判据 `x > handleRight`（**不要用固定容差**，见 §6） |
-| 上 | `[data-conversation-tabs]` 行 `bottom + 6` |
-| 下 | `8` |
+| 宸?| `.widthHandle[data-side="right"]` 鐨?`right + 6` |
+| 鍙?| 杞鏉℃寜閽渶灏?`x 鈭?6`锛屽垽鎹?`x > handleRight`锛?*涓嶈鐢ㄥ浐瀹氬宸?*锛岃 搂6锛?|
+| 涓?| `[data-conversation-tabs]` 琛?`bottom + 6` |
+| 涓?| `8` |
 
-宽度与锚定：
+瀹藉害涓庨敋瀹氾細
 
 ```
-列右缘 areaRight = 对话列（tabs 往上第一个「高容器」）的最外层同右缘祖先；右侧边栏开着时它就等于侧边栏左界。
-inner = 轮次条左 − 6 − (手柄右 + 6)        // 手柄与轮次条之间
-outer = (areaRight − 6) − (轮次条右 + 6)   // 轮次条与列右缘之间
+鍒楀彸缂?areaRight = 瀵硅瘽鍒楋紙tabs 寰€涓婄涓€涓€岄珮瀹瑰櫒銆嶏級鐨勬渶澶栧眰鍚屽彸缂樼鍏堬紱鍙充晶杈规爮寮€鐫€鏃跺畠灏辩瓑浜庝晶杈规爮宸︾晫銆?inner = 杞鏉″乏 鈭?6 鈭?(鎵嬫焺鍙?+ 6)        // 鎵嬫焺涓庤疆娆℃潯涔嬮棿
+outer = (areaRight 鈭?6) 鈭?(杞鏉″彸 + 6)   // 杞鏉′笌鍒楀彸缂樹箣闂?
+required = clamp(max(鍙冲甫鍚勫崱鐨?minWidth锛岀己鐪?280), [120, 480])   鈫?涓€鍒楀彧鑳芥湁涓€涓搴︼紝鍙栨渶鎸戠殑閭ｅ紶
 
-required = clamp(max(右带各卡的 minWidth，缺省 280), [120, 480])   ← 一列只能有一个宽度，取最挑的那张
+inner 鈮?required       鈫?宸﹂敋瀹氬湪鎵嬫焺 + 6锛寃idth = min(inner, 480)     鈫?甯告€?鍚﹀垯 outer 鈮?required  鈫?鍙抽敋瀹氬湪鍒楀彸缂橈紝width = min(outer, 480)       鈫?鐢ㄨ疆娆℃潯澶栦晶鐣欑櫧
+鍚﹀垯 鈫?**鍏嬪埗渚靛叆**锛歸idth = required锛屽彸缂樿创鍒楀彸缂橈紙浼氱洊浣忚疆娆℃潯锛岀敤鎴锋槑纭厑璁革級锛?       鍙粠姝ｆ枃閲屾嬁 required 鈭?鍙敤 鐨勯偅涓€鏉★紝缁濅笉 480 绯婅劯
+鑻?required > 瀵硅瘽鍒楀鐨?50% 鈫?鍥炶惤鍒板乏渚ф爤娓叉煋锛堟瀬绔獎绐楁墠瑙﹀彂锛?
+榛樿 280 鏄疄娴嬪€硷細264 鏃?ustc-quota 鐨?24h 鍒楄鎴垚 "35.2/1鈥?锛?80 璧峰叏閮ㄥ畬鏁达紝200 鏃?19 澶勮鍒囥€?```
 
-inner ≥ required       → 左锚定在手柄 + 6，width = min(inner, 480)     ← 常态
-否则 outer ≥ required  → 右锚定在列右缘，width = min(outer, 480)       ← 用轮次条外侧留白
-否则 → **克制侵入**：width = required，右缘贴列右缘（会盖住轮次条，用户明确允许），
-       只从正文里拿 required − 可用 的那一条，绝不 480 糊脸
-若 required > 对话列宽的 50% → 回落到左侧栈渲染（极端窄窗才触发）
-
-默认 280 是实测值：264 时 ustc-quota 的 24h 列被截成 "35.2/1…"，280 起全部完整，200 时 19 处裁切。
-```
-
-- **右侧边栏（开始 / 终端 / 浏览器）打开时，条带的硬右界是对话区的右边缘**，不是窗口边缘（0.3.15）。否则卡片会压在侧边栏上，或落在窗口边缘而越出对话区。
-- 溢出时（卡片总高 > 列高）才切成滚动容器，并**按阴影外扩 16px、再用 padding 缩回**：卡片矩形逐像素不变，裁切线落在留白里。见 §6 第一行。
-- 堆叠间距 `gap: 6`，与左侧一致——不要为了「阴影分开」自造更大间距。
-- 没有右侧面板时不渲染条带：不占宽、不拦点击。
-
-## 6. 踩坑清单（症状 → 根因 → 修法）
-
-| 症状 | 根因 | 修法 |
+- **鍙充晶杈规爮锛堝紑濮?/ 缁堢 / 娴忚鍣級鎵撳紑鏃讹紝鏉″甫鐨勭‖鍙崇晫鏄璇濆尯鐨勫彸杈圭紭**锛屼笉鏄獥鍙ｈ竟缂橈紙0.3.15锛夈€傚惁鍒欏崱鐗囦細鍘嬪湪渚ц竟鏍忎笂锛屾垨钀藉湪绐楀彛杈圭紭鑰岃秺鍑哄璇濆尯銆?- 婧㈠嚭鏃讹紙鍗＄墖鎬婚珮 > 鍒楅珮锛夋墠鍒囨垚婊氬姩瀹瑰櫒锛屽苟**鎸夐槾褰卞鎵?16px銆佸啀鐢?padding 缂╁洖**锛氬崱鐗囩煩褰㈤€愬儚绱犱笉鍙橈紝瑁佸垏绾胯惤鍦ㄧ暀鐧介噷銆傝 搂6 绗竴琛屻€?- 鍫嗗彔闂磋窛 `gap: 6`锛屼笌宸︿晶涓€鑷粹€斺€斾笉瑕佷负浜嗐€岄槾褰卞垎寮€銆嶈嚜閫犳洿澶ч棿璺濄€?- 娌℃湁鍙充晶闈㈡澘鏃朵笉娓叉煋鏉″甫锛氫笉鍗犲銆佷笉鎷︾偣鍑汇€?
+## 6. 韪╁潙娓呭崟锛堢棁鐘?鈫?鏍瑰洜 鈫?淇硶锛?
+| 鐥囩姸 | 鏍瑰洜 | 淇硶 |
 |---|---|---|
-| 升级 dock 后所有卡片消失 | 注册表是模块闭包变量，热更新后被重置 | 注册表/监听器挂到 `window` |
-| 右侧卡片阴影是硬边方框 | 条带 `overflow-y:auto`，另一个轴的 `visible` 也会变裁剪 | `overflow: visible` |
-| 两张卡看起来黏成一块 | 曾自造 18px 间距 → 用户否决；真正原因是面板底色与页面色接近 + 阴影填满缝 | 间距回到 6；由卡片侧调**阴影颜色**（不是形状、不是底色） |
-| 发布同版本号后行为没变 | `pnpm install` 认为已是最新，不换包 | 每次发布必须升 `package.json` 版本 |
-| 打包里还是旧版本 | `npm pack` 取 `package.json` 的 version，不是 client.js 常量 | 同步三处：`package.json` / `index.js` / `client.js` |
-| 带被挤没、面板消失 | `span < 200` 时 `return null` | 见 §5 的宽度公式 |
-| 挤窄后反而压住轮次条 | 锚点检测用 `x > left + 40` / `+2` 过滤，带为 0 时轮次条被排除、退回 480 兜底 | 判据改成 `x > handleRight` |
-| 面板高于列高时下方卡片不可达 | `overflow: visible` 不滚动 | 溢出时才切滚动容器：按阴影 16px 外扩、同值 padding 缩回，卡片矩形逐像素不变；`scrollbar-width:none` |
-| 溢出判定一直不翻转 | 卡片高度变化（异步数据、样式注入）不触发 dock 重渲染 | `ResizeObserver` 盯每张卡 + 700ms 锚点 tick 兜底（窗口被最小化时节流会让 RO 延迟数秒） |
-| 挤窄后对话拖不回来 | 右锚定贴到「轮次条 − 6」，把 10px 的 splitter 整条盖住；卡片越高可抓的地方越少（改成高卡实测：手柄中心 `elementFromPoint` 命中卡片） | 右边界改为「splitter 左侧 − 6」（0.3.13），代价是卡片离轮次条 23px |
-| 没有锚点时卡片 480px 糊住对话 | `edge` 兜底直接用了 MAX_PANEL_WIDTH（480） | 0.3.21：任何兜底都不得低于/高于最小可读宽度 280 |
-| 侧边栏开着时卡片被挤成一行省略号 | 旧规则「挤不下就压住对话区」：inner 只有 111px 也硬给 200px，向正文借 89px | 0.3.21 用实测的 280 最小可读宽度，侵入只拿它需要的差额 |
-| 条带莫名塌到 200px、右边留一条死白 | 右锚点取 `min(所有 /轮次|跳转/ 按钮 x)`，一个**消息级**「跳转」按钮落在手柄与轮次条之间就会把整条带拉走（实测：注入单个 1700 处的按钮，条带 271→200 并左移压住正文） | 轮次条是**竖列**：同 x（±2）≥4 个按钮才算列，取成员最多的列（0.3.14） |
-| 卡片压在「开始」右侧边栏上 / 越出对话区 | 右侧边栏打开后轮次条可能整个不渲染（实测 `matched=0`），条带走 480px 兜底，贴 `right: 8` 即窗口右缘 | 从 `[data-conversation-tabs]` 向上找第一个「右边缘 < 窗口」的祖先 = 对话区右界，条带任何分支都不得越过它（0.3.15） |
-| 部署后页面仍是旧代码 | 覆盖 `node_modules/<plugin>/client.js`，插件图不变，client-hmr 不换模块 | 走正规安装（§7） |
+| 鍗囩骇 dock 鍚庢墍鏈夊崱鐗囨秷澶?| 娉ㄥ唽琛ㄦ槸妯″潡闂寘鍙橀噺锛岀儹鏇存柊鍚庤閲嶇疆 | 娉ㄥ唽琛?鐩戝惉鍣ㄦ寕鍒?`window` |
+| 鍙充晶鍗＄墖闃村奖鏄‖杈规柟妗?| 鏉″甫 `overflow-y:auto`锛屽彟涓€涓酱鐨?`visible` 涔熶細鍙樿鍓?| `overflow: visible` |
+| 涓ゅ紶鍗＄湅璧锋潵榛忔垚涓€鍧?| 鏇捐嚜閫?18px 闂磋窛 鈫?鐢ㄦ埛鍚﹀喅锛涚湡姝ｅ師鍥犳槸闈㈡澘搴曡壊涓庨〉闈㈣壊鎺ヨ繎 + 闃村奖濉弧缂?| 闂磋窛鍥炲埌 6锛涚敱鍗＄墖渚ц皟**闃村奖棰滆壊**锛堜笉鏄舰鐘躲€佷笉鏄簳鑹诧級 |
+| 鍙戝竷鍚岀増鏈彿鍚庤涓烘病鍙?| `pnpm install` 璁や负宸叉槸鏈€鏂帮紝涓嶆崲鍖?| 姣忔鍙戝竷蹇呴』鍗?`package.json` 鐗堟湰 |
+| 鎵撳寘閲岃繕鏄棫鐗堟湰 | `npm pack` 鍙?`package.json` 鐨?version锛屼笉鏄?client.js 甯搁噺 | 鍚屾涓夊锛歚package.json` / `index.js` / `client.js` |
+| 甯﹁鎸ゆ病銆侀潰鏉挎秷澶?| `span < 200` 鏃?`return null` | 瑙?搂5 鐨勫搴﹀叕寮?|
+| 鎸ょ獎鍚庡弽鑰屽帇浣忚疆娆℃潯 | 閿氱偣妫€娴嬬敤 `x > left + 40` / `+2` 杩囨护锛屽甫涓?0 鏃惰疆娆℃潯琚帓闄ゃ€侀€€鍥?480 鍏滃簳 | 鍒ゆ嵁鏀规垚 `x > handleRight` |
+| 闈㈡澘楂樹簬鍒楅珮鏃朵笅鏂瑰崱鐗囦笉鍙揪 | `overflow: visible` 涓嶆粴鍔?| 婧㈠嚭鏃舵墠鍒囨粴鍔ㄥ鍣細鎸夐槾褰?16px 澶栨墿銆佸悓鍊?padding 缂╁洖锛屽崱鐗囩煩褰㈤€愬儚绱犱笉鍙橈紱`scrollbar-width:none` |
+| 婧㈠嚭鍒ゅ畾涓€鐩翠笉缈昏浆 | 鍗＄墖楂樺害鍙樺寲锛堝紓姝ユ暟鎹€佹牱寮忔敞鍏ワ級涓嶈Е鍙?dock 閲嶆覆鏌?| `ResizeObserver` 鐩瘡寮犲崱 + 700ms 閿氱偣 tick 鍏滃簳锛堢獥鍙ｈ鏈€灏忓寲鏃惰妭娴佷細璁?RO 寤惰繜鏁扮锛?|
+| 鎸ょ獎鍚庡璇濇嫋涓嶅洖鏉?| 鍙抽敋瀹氳创鍒般€岃疆娆℃潯 鈭?6銆嶏紝鎶?10px 鐨?splitter 鏁存潯鐩栦綇锛涘崱鐗囪秺楂樺彲鎶撶殑鍦版柟瓒婂皯锛堟敼鎴愰珮鍗″疄娴嬶細鎵嬫焺涓績 `elementFromPoint` 鍛戒腑鍗＄墖锛?| 鍙宠竟鐣屾敼涓恒€宻plitter 宸︿晶 鈭?6銆嶏紙0.3.13锛夛紝浠ｄ环鏄崱鐗囩杞鏉?23px |
+| 娌℃湁閿氱偣鏃跺崱鐗?480px 绯婁綇瀵硅瘽 | `edge` 鍏滃簳鐩存帴鐢ㄤ簡 MAX_PANEL_WIDTH锛?80锛?| 0.3.21锛氫换浣曞厹搴曢兘涓嶅緱浣庝簬/楂樹簬鏈€灏忓彲璇诲搴?280 |
+| 渚ц竟鏍忓紑鐫€鏃跺崱鐗囪鎸ゆ垚涓€琛岀渷鐣ュ彿 | 鏃ц鍒欍€屾尋涓嶄笅灏卞帇浣忓璇濆尯銆嶏細inner 鍙湁 111px 涔熺‖缁?200px锛屽悜姝ｆ枃鍊?89px | 0.3.21 鐢ㄥ疄娴嬬殑 280 鏈€灏忓彲璇诲搴︼紝渚靛叆鍙嬁瀹冮渶瑕佺殑宸 |
+| 鏉″甫鑾悕濉屽埌 200px銆佸彸杈圭暀涓€鏉℃鐧?| 鍙抽敋鐐瑰彇 `min(鎵€鏈?/杞|璺宠浆/ 鎸夐挳 x)`锛屼竴涓?*娑堟伅绾?*銆岃烦杞€嶆寜閽惤鍦ㄦ墜鏌勪笌杞鏉′箣闂村氨浼氭妸鏁存潯甯︽媺璧帮紙瀹炴祴锛氭敞鍏ュ崟涓?1700 澶勭殑鎸夐挳锛屾潯甯?271鈫?00 骞跺乏绉诲帇浣忔鏂囷級 | 杞鏉℃槸**绔栧垪**锛氬悓 x锛埪?锛夆墺4 涓寜閽墠绠楀垪锛屽彇鎴愬憳鏈€澶氱殑鍒楋紙0.3.14锛?|
+| 鍗＄墖鍘嬪湪銆屽紑濮嬨€嶅彸渚ц竟鏍忎笂 / 瓒婂嚭瀵硅瘽鍖?| 鍙充晶杈规爮鎵撳紑鍚庤疆娆℃潯鍙兘鏁翠釜涓嶆覆鏌擄紙瀹炴祴 `matched=0`锛夛紝鏉″甫璧?480px 鍏滃簳锛岃创 `right: 8` 鍗崇獥鍙ｅ彸缂?| 浠?`[data-conversation-tabs]` 鍚戜笂鎵剧涓€涓€屽彸杈圭紭 < 绐楀彛銆嶇殑绁栧厛 = 瀵硅瘽鍖哄彸鐣岋紝鏉″甫浠讳綍鍒嗘敮閮戒笉寰楄秺杩囧畠锛?.3.15锛?|
+| 閮ㄧ讲鍚庨〉闈粛鏄棫浠ｇ爜 | 瑕嗙洊 `node_modules/<plugin>/client.js`锛屾彃浠跺浘涓嶅彉锛宑lient-hmr 涓嶆崲妯″潡 | 璧版瑙勫畨瑁咃紙搂7锛?|
 
-## 7. 部署纪律
+## 7. 閮ㄧ讲绾緥
 
 ```powershell
-# 1) 打包
+# 1) 鎵撳寘
 cd <repo>; npm pack --silent
-# 2) 放到本机 vendor
+# 2) 鏀惧埌鏈満 vendor
 Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
-# 3) 改 profile spec（只改这一行）
+# 3) 鏀?profile spec锛堝彧鏀硅繖涓€琛岋級
 #    profiles/desktop/package.json -> "dsh-panel-dock": "file:C:/Users/<user>/.dsh/vendor/dsh-panel-dock-<ver>.tgz"
-# 4) 走宿主 CLI 安装（禁手改 cordis.patch.yml / node_modules）
-& "<安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop install
+# 4) 璧板涓?CLI 瀹夎锛堢鎵嬫敼 cordis.patch.yml / node_modules锛?& "<瀹夎鐩綍>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop install
 ```
 
-- 打包版**没有**「刷新页面」菜单，也**没有** Ctrl+R；Web UI 热更新由 `dsh-client-hmr` 负责，正常安装后**不需要**让用户刷新或重启。
-- 若 `pnpm` 报 `ERR_PNPM_NO_MATCHING_VERSION` 或 ENOENT：检查 spec 里的用户名/路径（不同机器用户名不同，如 `king` vs `king_`）。
-- 网络抖动会让 GitHub tarball 依赖（如 advisor）失败，重试即可。
-- 在沙箱会话里 `npm pack` 会因 `~/AppData/Local/npm-cache` 越界报 `EPERM`：加 `--cache <工作区内路径>` 即可。
+- 鎵撳寘鐗?*娌℃湁**銆屽埛鏂伴〉闈€嶈彍鍗曪紝涔?*娌℃湁** Ctrl+R锛沇eb UI 鐑洿鏂扮敱 `dsh-client-hmr` 璐熻矗锛屾甯稿畨瑁呭悗**涓嶉渶瑕?*璁╃敤鎴峰埛鏂版垨閲嶅惎銆?- 鑻?`pnpm` 鎶?`ERR_PNPM_NO_MATCHING_VERSION` 鎴?ENOENT锛氭鏌?spec 閲岀殑鐢ㄦ埛鍚?璺緞锛堜笉鍚屾満鍣ㄧ敤鎴峰悕涓嶅悓锛屽 `king` vs `king_`锛夈€?- 缃戠粶鎶栧姩浼氳 GitHub tarball 渚濊禆锛堝 advisor锛夊け璐ワ紝閲嶈瘯鍗冲彲銆?- 鍦ㄦ矙绠变細璇濋噷 `npm pack` 浼氬洜 `~/AppData/Local/npm-cache` 瓒婄晫鎶?`EPERM`锛氬姞 `--cache <宸ヤ綔鍖哄唴璺緞>` 鍗冲彲銆?
+## 8. 楠岃瘉绾緥
 
-## 8. 验证纪律
+**鏂█銆岀敤鎴风湅鍒扮殑銆嶅繀椤荤湅鐪熷疄绐楀彛鎴浘**锛屼笉鏄?DOM 鏁板€笺€?
+- 璺緞 E锛堢湡瀹炴闈㈢獥鍙ｏ級锛歚%USERPROFILE%\.dsh\skills\dsh-real-screenshot\scripts\win-shot.ps1 -ProcessId <pid> -Out <png>`锛岀劧鍚?`read_image` **浜茶嚜鐪?*銆?- 璺緞 F锛堝悓涓€瀹炰緥 Web UI銆佺湡瀹炴暟鎹級锛歚node E:\dsh-recovery\04-kit\dsh-web-shot.mjs <port>`銆?- DOM 搴﹂噺銆佹嫋鎷姐€佽鍙ｅ垏鎹細CDP 鑴氭湰锛涢鑹?闃村奖鐢?*鍍忕礌鍙栨牱**锛坄Bitmap.GetPixel`锛夊垽瀹氾紝涓嶈鍑嵃璞°€?
+鐜版垚鑴氭湰锛堜細璇濆伐浣滃尯 `.scratch/`锛夛細
 
-**断言「用户看到的」必须看真实窗口截图**，不是 DOM 数值。
-
-- 路径 E（真实桌面窗口）：`%USERPROFILE%\.dsh\skills\dsh-real-screenshot\scripts\win-shot.ps1 -ProcessId <pid> -Out <png>`，然后 `read_image` **亲自看**。
-- 路径 F（同一实例 Web UI、真实数据）：`node E:\dsh-recovery\04-kit\dsh-web-shot.mjs <port>`。
-- DOM 度量、拖拽、视口切换：CDP 脚本；颜色/阴影用**像素取样**（`Bitmap.GetPixel`）判定，不要凭印象。
-
-现成脚本（会话工作区 `.scratch/`）：
-
-| 脚本 | 用途 |
+| 鑴氭湰 | 鐢ㄩ€?|
 |---|---|
-| `squeeze4.mjs` | 打开真实会话 → 拖宽对话盒子挤掉空白带 → 验证面板仍存在且不越轮次条 |
-| `check-right4.mjs` | 把面板移到右侧、等真数据、2560/1936 双视口测量 + 截图 |
-| `probe-ovf3.mjs` | 卡片横向溢出/裁切度量 |
-| `narrow.mjs` | 纯视口缩放的对照（注意：这不是「挤窄」，见 §5） |
+| `squeeze4.mjs` | 鎵撳紑鐪熷疄浼氳瘽 鈫?鎷栧瀵硅瘽鐩掑瓙鎸ゆ帀绌虹櫧甯?鈫?楠岃瘉闈㈡澘浠嶅瓨鍦ㄤ笖涓嶈秺杞鏉?|
+| `check-right4.mjs` | 鎶婇潰鏉跨Щ鍒板彸渚с€佺瓑鐪熸暟鎹€?560/1936 鍙岃鍙ｆ祴閲?+ 鎴浘 |
+| `probe-ovf3.mjs` | 鍗＄墖妯悜婧㈠嚭/瑁佸垏搴﹂噺 |
+| `narrow.mjs` | 绾鍙ｇ缉鏀剧殑瀵圭収锛堟敞鎰忥細杩欎笉鏄€屾尋绐勩€嶏紝瑙?搂5锛?|
 
-- **宽度扫描（量 minWidth）**（`HANDOFF.md` 不随 npm 包发布，只在仓库里）：把 `[data-panel-dock-strip]` 的 `width` 用内联 `!important` 依次设成 240/260/280/300/340，每次截图看卡片里的**数值**有没有被截成 `35.2/1…`；取「最窄且无截断」那一档。注意：`scrollWidth > clientWidth` 与文本 Range 宽度两条启发式都会漏判（264 时都报"无截断"，实际已截），**只能看图**。
-- 同一实例的**桌面 app**：VM 上的 DSH 以 `--remote-debugging-port=9222` 启动，直连 `dsh-app://app/` 这个 target 即可（**不需要**伪造 auth cookie，也别选 `welcome.html`）。窗口被最小化/后台时会节流（RO 与 rAF 延迟数秒、`Input.dispatchMouseEvent` 超时），先 `Emulation.setFocusEmulationEnabled` + `Page.setWebLifecycleState: active`。
-- 单元测试在沙箱里用 `node --test` 会 `spawn EPERM`（runner 要起子进程）：直接 `node test/dock.test.js`。
-- **不要用「卡片上显示的版本号」证明客户端已热更新**（2026-11-19 实测教训）：dsh-codex-advisor 的版本号来自 host 快照（`props.version` ← `data?.source?.version`），不是 client bundle 常量，显示 v0.10.1 时其 client.js 文件早已是 0.10.2。要证客户端生效，只能用「行为指纹」（发版时故意改一段可见文字/属性）或 CDP 读 `window.__dshPanelDock.version`；拿不准就别声称，直接让用户重启。
-
-先 VM（`win11-test`，`king@100.108.63.25`，密钥 `~/.ssh/id_tailnet`）验证，再同步 invictus。
-
-## 8.1 外观规格（SSOT）
-
-规格全文在 README 的 "Appearance spec (SSOT)"：左右两套 frame / 背景 / 阴影 / 字号，全部是现役卡片的实测约定。消费者只写指针，**不复制**——两份必然漂移。
-
-## 8.2 性能（2026-11-21 实测）
-
-- 旧版（0.5.2）每 700ms 无条件跑 `measureAnchors`：全文档 `querySelectorAll` + 约 20 次 `getBoundingClientRect`（每次强制 reflow）。60 秒实测：gbcr 9306、qsa 331、longtask 44 次/5.1s、最长帧 513ms。
-- 0.6.0：右带没有卡 → 完全不测；有卡 → 只在窗口 resize / 对话列尺寸变化（ResizeObserver）时测，2.5s 兜底。同一页面 60 秒：gbcr **160**、qsa **157**、longtask 0、最长帧 51.7ms。
-- **教训**：性能对比必须在同一状态下做受控 A/B。曾把"某张卡未渲染时"的 10.9s 与"该卡渲染后"的 27s 直接相比，得出过错误结论。正确做法：把可疑卡临时替换成抛错组件（0.5.2 的错误边界会隔离它、不轮询），跑同长窗口，差值才是那张卡的成本。
-- 该会话剩余 TaskDuration ~24.5s/60s 来自宿主渲染长会话（208 轮 / 7567 步）+ 各卡轮询，不是 dock。
-
-## 9. 消费者现状
-
-| 插件 | 版本 | 说明 |
+- **瀹藉害鎵弿锛堥噺 minWidth锛?*锛坄HANDOFF.md` 涓嶉殢 npm 鍖呭彂甯冿紝鍙湪浠撳簱閲岋級锛氭妸 `[data-panel-dock-strip]` 鐨?`width` 鐢ㄥ唴鑱?`!important` 渚濇璁炬垚 240/260/280/300/340锛屾瘡娆℃埅鍥剧湅鍗＄墖閲岀殑**鏁板€?*鏈夋病鏈夎鎴垚 `35.2/1鈥锛涘彇銆屾渶绐勪笖鏃犳埅鏂€嶉偅涓€妗ｃ€傛敞鎰忥細`scrollWidth > clientWidth` 涓庢枃鏈?Range 瀹藉害涓ゆ潯鍚彂寮忛兘浼氭紡鍒わ紙264 鏃堕兘鎶?鏃犳埅鏂?锛屽疄闄呭凡鎴級锛?*鍙兘鐪嬪浘**銆?- 鍚屼竴瀹炰緥鐨?*妗岄潰 app**锛歏M 涓婄殑 DSH 浠?`--remote-debugging-port=9222` 鍚姩锛岀洿杩?`dsh-app://app/` 杩欎釜 target 鍗冲彲锛?*涓嶉渶瑕?*浼€?auth cookie锛屼篃鍒€?`welcome.html`锛夈€傜獥鍙ｈ鏈€灏忓寲/鍚庡彴鏃朵細鑺傛祦锛圧O 涓?rAF 寤惰繜鏁扮銆乣Input.dispatchMouseEvent` 瓒呮椂锛夛紝鍏?`Emulation.setFocusEmulationEnabled` + `Page.setWebLifecycleState: active`銆?- 鍗曞厓娴嬭瘯鍦ㄦ矙绠遍噷鐢?`node --test` 浼?`spawn EPERM`锛坮unner 瑕佽捣瀛愯繘绋嬶級锛氱洿鎺?`node test/dock.test.js`銆?- **涓嶈鐢ㄣ€屽崱鐗囦笂鏄剧ず鐨勭増鏈彿銆嶈瘉鏄庡鎴风宸茬儹鏇存柊**锛?026-11-19 瀹炴祴鏁欒锛夛細dsh-codex-advisor 鐨勭増鏈彿鏉ヨ嚜 host 蹇収锛坄props.version` 鈫?`data?.source?.version`锛夛紝涓嶆槸 client bundle 甯搁噺锛屾樉绀?v0.10.1 鏃跺叾 client.js 鏂囦欢鏃╁凡鏄?0.10.2銆傝璇佸鎴风鐢熸晥锛屽彧鑳界敤銆岃涓烘寚绾广€嶏紙鍙戠増鏃舵晠鎰忔敼涓€娈靛彲瑙佹枃瀛?灞炴€э級鎴?CDP 璇?`window.__dshPanelDock.version`锛涙嬁涓嶅噯灏卞埆澹扮О锛岀洿鎺ヨ鐢ㄦ埛閲嶅惎銆?
+鍏?VM锛坄win11-test`锛宍king@100.108.63.25`锛屽瘑閽?`~/.ssh/id_tailnet`锛夐獙璇侊紝鍐嶅悓姝?invictus銆?
+## 8.1 澶栬瑙勬牸锛圫SOT锛?
+瑙勬牸鍏ㄦ枃鍦?README 鐨?"Appearance spec (SSOT)"锛氬乏鍙充袱濂?frame / 鑳屾櫙 / 闃村奖 / 瀛楀彿锛屽叏閮ㄦ槸鐜板焦鍗＄墖鐨勫疄娴嬬害瀹氥€傛秷璐硅€呭彧鍐欐寚閽堬紝**涓嶅鍒?*鈥斺€斾袱浠藉繀鐒舵紓绉汇€?
+## 8.2 鎬ц兘锛?026-11-21 瀹炴祴锛?
+- 鏃х増锛?.5.2锛夋瘡 700ms 鏃犳潯浠惰窇 `measureAnchors`锛氬叏鏂囨。 `querySelectorAll` + 绾?20 娆?`getBoundingClientRect`锛堟瘡娆″己鍒?reflow锛夈€?0 绉掑疄娴嬶細gbcr 9306銆乹sa 331銆乴ongtask 44 娆?5.1s銆佹渶闀垮抚 513ms銆?- 0.6.0锛氬彸甯︽病鏈夊崱 鈫?瀹屽叏涓嶆祴锛涙湁鍗?鈫?鍙湪绐楀彛 resize / 瀵硅瘽鍒楀昂瀵稿彉鍖栵紙ResizeObserver锛夋椂娴嬶紝2.5s 鍏滃簳銆傚悓涓€椤甸潰 60 绉掞細gbcr **160**銆乹sa **157**銆乴ongtask 0銆佹渶闀垮抚 51.7ms銆?- **鏁欒**锛氭€ц兘瀵规瘮蹇呴』鍦ㄥ悓涓€鐘舵€佷笅鍋氬彈鎺?A/B銆傛浘鎶?鏌愬紶鍗℃湭娓叉煋鏃?鐨?10.9s 涓?璇ュ崱娓叉煋鍚?鐨?27s 鐩存帴鐩告瘮锛屽緱鍑鸿繃閿欒缁撹銆傛纭仛娉曪細鎶婂彲鐤戝崱涓存椂鏇挎崲鎴愭姏閿欑粍浠讹紙0.5.2 鐨勯敊璇竟鐣屼細闅旂瀹冦€佷笉杞锛夛紝璺戝悓闀跨獥鍙ｏ紝宸€兼墠鏄偅寮犲崱鐨勬垚鏈€?- 璇ヤ細璇濆墿浣?TaskDuration ~24.5s/60s 鏉ヨ嚜瀹夸富娓叉煋闀夸細璇濓紙208 杞?/ 7567 姝ワ級+ 鍚勫崱杞锛屼笉鏄?dock銆?
+## 9. 娑堣垂鑰呯幇鐘?
+| 鎻掍欢 | 鐗堟湰 | 璇存槑 |
 |---|---|---|
-| `dsh-ustc-quota` | 1.2.7（invictus）/ 1.2.8（已发） | 左侧默认；右侧用 `rootDocked` 侧栏底色 + 更轻的阴影颜色（形状不变）。1.2.8 起声明 `minWidth: 280`（带断言）；invictus 仍 1.2.7，等它并到 rc.5 重启一起装。 |
-| `dsh-codex-advisor` | 0.10.2 | 归属会话 `session-3e48f83b`（DSH-Codex-Advisor）。0.10.1 起钉 tag（现为 `v0.3.23`）+「已装 ≥ 目标就拒绝安装」守卫；**2026-11-20 在 invictus 实机实测通过**：POST `/plugins/dsh-codex-advisor/install-panel-dock` → `{application:"up-to-date", installedVersion:"0.4.0", targetVersion:"0.3.23", reload:false}`，panel-dock 未被降级。0.10.2 声明 `minWidth: 260`（带断言）。0.11.0 开发中，会把 pin 换到 `v0.4.0`。 |
+| `dsh-ustc-quota` | 1.2.7锛坕nvictus锛? 1.2.8锛堝凡鍙戯級 | 宸︿晶榛樿锛涘彸渚х敤 `rootDocked` 渚ф爮搴曡壊 + 鏇磋交鐨勯槾褰遍鑹诧紙褰㈢姸涓嶅彉锛夈€?.2.8 璧峰０鏄?`minWidth: 280`锛堝甫鏂█锛夛紱invictus 浠?1.2.7锛岀瓑瀹冨苟鍒?rc.5 閲嶅惎涓€璧疯銆?|
+| `dsh-codex-advisor` | 0.10.2 | 褰掑睘浼氳瘽 `session-3e48f83b`锛圖SH-Codex-Advisor锛夈€?.10.1 璧烽拤 tag锛堢幇涓?`v0.3.23`锛?銆屽凡瑁?鈮?鐩爣灏辨嫆缁濆畨瑁呫€嶅畧鍗紱**2026-11-20 鍦?invictus 瀹炴満瀹炴祴閫氳繃**锛歅OST `/plugins/dsh-codex-advisor/install-panel-dock` 鈫?`{application:"up-to-date", installedVersion:"0.4.0", targetVersion:"0.3.23", reload:false}`锛宲anel-dock 鏈闄嶇骇銆?.10.2 澹版槑 `minWidth: 260`锛堝甫鏂█锛夈€?.11.0 寮€鍙戜腑锛屼細鎶?pin 鎹㈠埌 `v0.4.0`銆?|
 
-## 10. 未决项
+## 10. 鏈喅椤?
+- npm 鏄惁鍙戝竷锛堢敤鎴峰皻鏈壒鍑嗭級銆倀ag 宸叉湁 `v0.3.12` / `v0.3.13` / `v0.3.15` / `v0.3.17` / `v0.3.21` / `v0.3.23` / `v0.4.0`銆?- `dock-core.js` + `test/dock.test.js` 浠嶅湪娴?*宸插垹闄?*鐨勬ā鍨嬶紙width / collapse / open / height 妯″紡 / order 鎺掑簭锛夛細10/10 缁夸絾涓嶈鐩栦换浣曠幇褰瑰嚑浣曘€傝涔堝垹銆佽涔堟寜鐜板焦閫昏緫锛坰ide 瑙ｆ瀽 + 甯﹀鍏紡锛夐噸鍐欙紝寰呯敤鎴峰畾銆?- 宸︿晶鏍堟孩鍑烘湭楠岃瘉锛堝涓?sidebar 鑷韩鏄惁婊氬姩锛夆€斺€斿彸渚у凡瑙ｅ喅锛屽乏渚ф湭娴嬨€?- 鏃?`createPortal` 鐨勬棫瀹夸富閫€鍥炶矾寰勫彧鍋氳繃闈欐€佹牳瀵癸紙`apply()` 浜岄€変竴 + 鏃у疄鐜板師鏍凤級锛?*娌℃湁杩愯鏃堕獙璇?*锛氭墜涓婃病鏈夐偅绉嶅涓汇€?- 0.4.0 鐨勫叚鎬侀獙璇佽褰曪細inner锛?571 瀹?鈫?480锛夈€乮ntrude锛?887 瀹?鈫?280锛夈€乷uter锛圴M 鍚堟垚閿氱偣 鈫?480锛夈€乫allback锛?70 瀹?鈫?鍏ㄩ儴鍥炲乏渚ф爤銆佹棤鏉″甫锛夈€乵ixed銆乷verflow锛堟粴鍔?+ 闃村奖鐣欑櫧锛夈€?- **宸茶В鍐筹紙0.4.0锛?*锛氬乏鍙冲垏鎹㈤噸鎸傚崱鐗?鈫?鏀?portal 鎵樼洏鍚庡疄娴嬩笉澶嶇幇锛坄sameNode: true`銆佸垏杈瑰叏绋嬫棤銆屽姞杞戒腑鈥︺€嶏級銆傞仐鐣欒瀵熼」锛歊eact 浜嬩欢鐜板湪鍐掓场鍒?Tray 鑰屼笉鏄涓绘爲锛岃嫢灏嗘潵鏈夊涓婚€昏緫渚濊禆銆屼晶鏍忓唴鐐瑰嚮鍐掓场銆嶏紝闇€瑕佸鏍搞€?- 渚靛叆鏃朵細鐩栦綇杞鏉★紙鐢ㄦ埛鍏佽锛夛紱杞鏉″湪閭ｄ竴娈典笉鍙偣銆?- 鍥炶惤宸︿晶鏍堝彧鍦ㄣ€?80 > 瀵硅瘽鍒楀 50%銆嶆椂鍙戠敓锛涙鏃跺崱鑷繁鐨勩€岀Щ鍒板彸渚с€嶆寜浜嗘病鏈夊彲瑙佹晥鏋溿€?
+## 11. 绂佹浜嬮」
 
-- npm 是否发布（用户尚未批准）。tag 已有 `v0.3.12` / `v0.3.13` / `v0.3.15` / `v0.3.17` / `v0.3.21` / `v0.3.23` / `v0.4.0`。
-- `dock-core.js` + `test/dock.test.js` 仍在测**已删除**的模型（width / collapse / open / height 模式 / order 排序）：10/10 绿但不覆盖任何现役几何。要么删、要么按现役逻辑（side 解析 + 带宽公式）重写，待用户定。
-- 左侧栈溢出未验证（宿主 sidebar 自身是否滚动）——右侧已解决，左侧未测。
-- 无 `createPortal` 的旧宿主退回路径只做过静态核对（`apply()` 二选一 + 旧实现原样），**没有运行时验证**：手上没有那种宿主。
-- 0.4.0 的六态验证记录：inner（2571 宽 → 480）、intrude（1887 宽 → 280）、outer（VM 合成锚点 → 480）、fallback（470 宽 → 全部回左侧栈、无条带）、mixed、overflow（滚动 + 阴影留白）。
-- **已解决（0.4.0）**：左右切换重挂卡片 → 改 portal 托盘后实测不复现（`sameNode: true`、切边全程无「加载中…」）。遗留观察项：React 事件现在冒泡到 Tray 而不是宿主树，若将来有宿主逻辑依赖「侧栏内点击冒泡」，需要复核。
-- 侵入时会盖住轮次条（用户允许）；轮次条在那一段不可点。
-- 回落左侧栈只在「280 > 对话列宽 50%」时发生；此时卡自己的「移到右侧」按了没有可见效果。
-
-## 11. 禁止事项
-
-- 不给插件加任何导航项/按钮/开关。
-- 不改卡片配色；阴影只允许按底色调**颜色**，不动偏移与模糊。
-- 不自造堆叠间距（与左侧 6px 一致）。
-- 不重启 invictus 的 DSH（需当窗授权）。
-- 协作中心正在被另一会话重构：本插件相关记录先不写 LOG，只在需要时给指针。
+- 涓嶇粰鎻掍欢鍔犱换浣曞鑸」/鎸夐挳/寮€鍏炽€?- 涓嶆敼鍗＄墖閰嶈壊锛涢槾褰卞彧鍏佽鎸夊簳鑹茶皟**棰滆壊**锛屼笉鍔ㄥ亸绉讳笌妯＄硦銆?- 涓嶈嚜閫犲爢鍙犻棿璺濓紙涓庡乏渚?6px 涓€鑷达級銆?- 涓嶉噸鍚?invictus 鐨?DSH锛堥渶褰撶獥鎺堟潈锛夈€?- 鍗忎綔涓績姝ｅ湪琚彟涓€浼氳瘽閲嶆瀯锛氭湰鎻掍欢鐩稿叧璁板綍鍏堜笉鍐?LOG锛屽彧鍦ㄩ渶瑕佹椂缁欐寚閽堛€?
+- 绘制成本随视口面积走（2026-11-21 实测，running 态）：1936x996（1.9 Mpx）program 2239ms/8s = 25%、idle 72%；2575x1407 dSF1.5（8.1 Mpx）program 4391ms/8s = 49%、idle 49%。JS 始终约 1%，rAF 回调 0。用户真实窗口 3862x2110 设备像素（dpi 144），renderer 满核是 native 光栅/合成成本，不是插件 JS。
+- 涓嶇粰鎻掍欢鍔犱换浣曞鑸」/鎸夐挳/寮€鍏炽€?- 涓嶆敼鍗＄墖閰嶈壊锛涢槾褰卞彧鍏佽鎸夊簳鑹茶皟**棰滆壊**锛屼笉鍔ㄥ亸绉讳笌妯＄硦銆?- 涓嶈嚜閫犲爢鍙犻棿璺濓紙涓庡乏渚?6px 涓€鑷达級銆?- 涓嶉噸鍚?invictus 鐨?DSH锛堥渶褰撶獥鎺堟潈锛夈€?- 鍗忎綔涓績姝ｅ湪琚彟涓€浼氳瘽閲嶆瀯锛氭湰鎻掍欢鐩稿叧璁板綍鍏堜笉鍐?LOG锛屽彧鍦ㄩ渶瑕佹椂缁欐寚閽堛€?
