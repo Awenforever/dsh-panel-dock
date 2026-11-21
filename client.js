@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.5.1'
+    const VERSION = '0.5.2'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -45,8 +45,13 @@ window.__ModuleLoader__.load({
     // a hard-edged rectangle. Cards own their shadow, and it has to fall naturally the
     // way it does in the sidebar.
 
-    const zh = { empty: '暂无面板', toLeft: '移到左侧', toRight: '移到右侧' }
-    const en = { empty: 'No panels yet', toLeft: 'Move to the left panel', toRight: 'Move to the right panel' }
+    const zh = {
+      empty: '暂无面板', toLeft: '移到左侧', toRight: '移到右侧', cardCrashed: '渲染失败（已隔离）',
+    }
+    const en = {
+      empty: 'No panels yet', toLeft: 'Move to the left panel', toRight: 'Move to the right panel',
+      cardCrashed: 'failed to render (isolated)',
+    }
     let T = (key) => key
 
     // The registry lives on the window, not in this module's closure: a hot reload of
@@ -138,6 +143,7 @@ window.__ModuleLoader__.load({
       const version = typeof definition.version === 'string' || typeof definition.version === 'number'
         ? String(definition.version)
         : null
+      revisions.set(definition.id, revisionOf(definition.id) + 1)
       registry.set(definition.id, Object.assign({}, definition, { minWidth, version }))
       emit()
       return () => { registry.delete(definition.id); emit() }
@@ -190,7 +196,11 @@ window.__ModuleLoader__.load({
           minWidth: 0,
           boxSizing: 'border-box',
         },
-      }, items.map(renderPanel))
+      }, items.map((panel) => h(CardBoundary, {
+        key: panel.id + ':' + revisionOf(panel.id),
+        id: panel.id,
+        fallback: () => errorCard(panel),
+      }, renderPanel(panel))))
     }
 
     // Geometry of the right strip: between the transcript drag handle and the turn
@@ -452,7 +462,11 @@ window.__ModuleLoader__.load({
         'data-panel-dock-scrolls': scrolls ? '' : undefined,
         ref: stack,
         style,
-      }, items.map(renderPanel))
+      }, items.map((panel) => h(CardBoundary, {
+        key: panel.id + ':' + revisionOf(panel.id),
+        id: panel.id,
+        fallback: () => errorCard(panel),
+      }, renderPanel(panel))))
     }
 
 
@@ -595,6 +609,20 @@ window.__ModuleLoader__.load({
         return () => { observer.disconnect(); measureStack.current = null }
       }, [inBand, right.length, top])
 
+      // Cards in detached containers look perfectly healthy from the registry side, so
+      // say it out loud once if nothing ever mounted a host for them.
+      React.useEffect(() => {
+        if (all.length === 0) return undefined
+        const timer = setTimeout(() => {
+          if (!tray.leftSlot && !band.current) {
+            try {
+              console.error('[panel-dock] ' + all.length + ' card(s) registered but no host slot is mounted (sidebar footer / overlay).')
+            } catch {}
+          }
+        }, 1500)
+        return () => clearTimeout(timer)
+      }, [all.length])
+
       React.useEffect(() => () => {
         for (const el of tray.cells.values()) if (el.parentNode) el.parentNode.removeChild(el)
         tray.cells.clear()
@@ -642,7 +670,11 @@ window.__ModuleLoader__.load({
         }))
       }
       for (const panel of all) {
-        nodes.push(createPortal(renderPanel(panel), cellOf(panel.id), panel.id))
+        nodes.push(createPortal(h(CardBoundary, {
+          key: panel.id + ':' + revisionOf(panel.id),
+          id: panel.id,
+          fallback: () => errorCard(panel),
+        }, renderPanel(panel)), cellOf(panel.id), panel.id))
       }
       return h(React.Fragment, null, nodes)
     }
@@ -747,21 +779,71 @@ window.__ModuleLoader__.load({
       )
     }
 
+
+    // ---- crash isolation ----
+    // The host treats a slot entry that throws as broken and drops the *whole entry*:
+    // one bad card used to take every card down with it, and nothing recovered until a
+    // reload. Each card therefore gets its own boundary, and each slot entry is sealed
+    // so a dock bug cannot be mistaken for a broken host slot.
+    class CardBoundary extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { failed: false }
+      }
+      static getDerivedStateFromError() {
+        return { failed: true }
+      }
+      componentDidCatch(error) {
+        try { console.error('[panel-dock] card crashed and was isolated: ' + this.props.id, error) } catch {}
+      }
+      render() {
+        if (!this.state.failed) return this.props.children
+        return this.props.fallback ? this.props.fallback() : null
+      }
+    }
+
+    function errorCard(panel) {
+      return h('div', {
+        'data-panel-dock-item': panel.id,
+        'data-panel-dock-error': '',
+        style: {
+          width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '8px 9px',
+          border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 12,
+          background: 'var(--dsw-alias-bg-layer-1)',
+          color: 'var(--dsw-alias-label-secondary)',
+          fontSize: 11, lineHeight: 1.35, pointerEvents: 'auto',
+        },
+      }, (panel.title || panel.id) + ' · ' + T('cardCrashed'))
+    }
+
+    // Re-registering an id means a new component: remount the boundary instead of leaving
+    // it stuck in the failed state forever.
+    const revisions = new Map()
+    function revisionOf(id) {
+      return revisions.get(id) || 0
+    }
+
+    // A sealed slot entry renders nothing instead of throwing into the host.
+    function seal(Component, name) {
+      return function SealedSlot() {
+        return h(CardBoundary, { id: name, fallback: null }, h(Component))
+      }
+    }
+
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-panel-dock: locale')
       T = ctx.locale.bind(NS)
       // The tray keeps cards mounted when they change hosts; without portals the dock
       // falls back to rendering each host directly (0.3.x behaviour, cards remount).
-      const leftHost = createPortal ? LeftSlot : LeftHost
-      const rightHost = createPortal ? TrayHost : RightHost
+      const leftHost = seal(createPortal ? LeftSlot : LeftHost, 'panel-dock-left')
+      const rightHost = seal(createPortal ? TrayHost : RightHost, 'panel-dock-right')
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
         name: 'sidebar.footer.action', id: 'panel-dock-left', order: 900, locale: NS,
       }, leftHost))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay', id: 'panel-dock-right', order: 40, locale: NS,
       }, rightHost))
-      try {
-        window.__dshPanelDock = {
+      const api = {
           version: VERSION,
           define,
           panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), minWidth: p.minWidth, version: p.version })),
@@ -771,7 +853,15 @@ window.__ModuleLoader__.load({
           toggleSide,
           subscribe,
         }
-      } catch {}
+      ctx.effect(() => {
+        try { window.__dshPanelDock = api } catch {}
+        // Disabling the plugin must hand the panels back to their own fallbacks, so the
+        // global has to disappear with us -- leaving it behind silently keeps every card
+        // believing the dock is alive.
+        return () => {
+          try { if (window.__dshPanelDock === api) delete window.__dshPanelDock } catch {}
+        }
+      }, 'dsh-panel-dock: global')
     }
 
     return { inject: ['slots', 'locale'], apply }
