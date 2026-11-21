@@ -183,6 +183,13 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 
 规格全文在 README 的 "Appearance spec (SSOT)"：左右两套 frame / 背景 / 阴影 / 字号，全部是现役卡片的实测约定。消费者只写指针，**不复制**——两份必然漂移。
 
+## 8.2 性能（2026-11-21 实测）
+
+- 旧版（0.5.2）每 700ms 无条件跑 `measureAnchors`：全文档 `querySelectorAll` + 约 20 次 `getBoundingClientRect`（每次强制 reflow）。60 秒实测：gbcr 9306、qsa 331、longtask 44 次/5.1s、最长帧 513ms。
+- 0.6.0：右带没有卡 → 完全不测；有卡 → 只在窗口 resize / 对话列尺寸变化（ResizeObserver）时测，2.5s 兜底。同一页面 60 秒：gbcr **160**、qsa **157**、longtask 0、最长帧 51.7ms。
+- **教训**：性能对比必须在同一状态下做受控 A/B。曾把"某张卡未渲染时"的 10.9s 与"该卡渲染后"的 27s 直接相比，得出过错误结论。正确做法：把可疑卡临时替换成抛错组件（0.5.2 的错误边界会隔离它、不轮询），跑同长窗口，差值才是那张卡的成本。
+- 该会话剩余 TaskDuration ~24.5s/60s 来自宿主渲染长会话（208 轮 / 7567 步）+ 各卡轮询，不是 dock。
+
 ## 9. 消费者现状
 
 | 插件 | 版本 | 说明 |
