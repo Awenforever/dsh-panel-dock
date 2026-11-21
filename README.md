@@ -136,13 +136,20 @@ the one shared header row for those cards — a monochrome logo that *is* the si
 and a quiet version. It is **not** a layout container: your frame and body stay yours.
 
 ```js
-const CardShell = dock.CardShell
-
 function MyCard(props) {
-  return h(CardShell, Object.assign({}, props, { id: 'my-panel', actions: h(RefreshButton) }),
-    h(MyBody))                       // ← your frame + content, unchanged
+  const CardShell = dock.CardShell
+  return h('div', Object.assign({}, props, {
+    style: Object.assign({}, props.style, myFrame),   // your frame; `style` goes last
+  }),
+    h(CardShell, { id: 'my-panel', actions: h(RefreshButton) }),   // the header row only
+    h(MyBody),                                                     // your body, a sibling
+  )
 }
 ```
+
+**CardShell renders the header row only — it does not render `children`.** That is deliberate
+(see the user-facing rule: the shell is not a layout container), so put your body *next to* the
+shell, never inside it. Passing children logs one warning per card instead of silently eating them.
 
 | prop | meaning |
 |---|---|

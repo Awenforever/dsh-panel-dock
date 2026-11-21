@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.5.0'
+    const VERSION = '0.5.1'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -707,8 +707,19 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // Header only, by design: the card renders its own frame and body *under* this row.
+    // Children are deliberately not rendered -- but silently dropping them would be the
+    // worst kind of bug, so passing them is reported once per card instead of ignored.
+    const shellWarned = new Set()
+
     function CardShell(props) {
       const id = props.id
+      if (props.children !== undefined && props.children !== null && !shellWarned.has(id)) {
+        shellWarned.add(id)
+        try {
+          console.warn('[panel-dock] CardShell renders the header row only; put your body next to it, not inside it (card: ' + id + ').')
+        } catch {}
+      }
       const [, force] = React.useState(0)
       React.useEffect(() => subscribe(() => force((n) => n + 1)), [])
       const panel = registry.get(id)

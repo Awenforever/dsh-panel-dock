@@ -16,7 +16,7 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `github.com/Awenforever/dsh-panel-dock` |
-| 版本 | `0.5.0`（0.3.21 最小可读宽度；0.3.22–23 `minWidth`；0.4.0 portal 托盘；**0.4.1 `order` 排序；0.5.0 可选 `CardShell` + 术语统一**） |
+| 版本 | `0.5.1`（…0.4.1 `order` 排序；0.5.0 可选 `CardShell` + 术语统一；0.5.1 修 README 示例 + children 警告） |
 | npm | **未发布** |
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
@@ -67,7 +67,7 @@ window.__dshPanelDock = {
 dock 保证**右带**里永不窄于它；空白不够时只取走差额。`panels()` 会把解析后的 `minWidth` 一并返回（左右两侧都返回，供调用方判断）。
 注意 `minWidth` **不约束左栈**：左栈宽度=侧边栏宽度（host/用户决定），dock 不能加宽。
 `order` 决定堆叠：**升序，缺省 100，同值保持注册序**（0.4.1）。`version`（字符串/数字，可选）由 `CardShell` 显示。
-`CardShell`（0.5.0）：可选共享顶栏组件，`h(dock.CardShell, { id, actions? }, 卡片主体)`；只画顶栏（logo=侧别切换 + 标题 + 版本），不是布局容器。已实测：渲染、点击换边、aria 文案翻转均正常。
+`CardShell`（0.5.0/0.5.1）：可选共享顶栏组件，`h(dock.CardShell, { id, actions? })`；**只画顶栏**（logo=侧别切换 + 标题 + 版本），**不渲染 children**（故意，不是容器）。正确用法：卡片根 div 里先放 shell、再放自己的主体，两者是兄弟。传 children 会打一条 warning（0.5.1）而不是静默吞掉。已实测：渲染、点击换边、aria 文案翻转均正常。
 
 ## 4. 面板组件契约
 
@@ -172,7 +172,7 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 | `probe-ovf3.mjs` | 卡片横向溢出/裁切度量 |
 | `narrow.mjs` | 纯视口缩放的对照（注意：这不是「挤窄」，见 §5） |
 
-- **宽度扫描（量 minWidth）**：把 `[data-panel-dock-strip]` 的 `width` 用内联 `!important` 依次设成 240/260/280/300/340，每次截图看卡片里的**数值**有没有被截成 `35.2/1…`；取「最窄且无截断」那一档。注意：`scrollWidth > clientWidth` 与文本 Range 宽度两条启发式都会漏判（264 时都报"无截断"，实际已截），**只能看图**。
+- **宽度扫描（量 minWidth）**（`HANDOFF.md` 不随 npm 包发布，只在仓库里）：把 `[data-panel-dock-strip]` 的 `width` 用内联 `!important` 依次设成 240/260/280/300/340，每次截图看卡片里的**数值**有没有被截成 `35.2/1…`；取「最窄且无截断」那一档。注意：`scrollWidth > clientWidth` 与文本 Range 宽度两条启发式都会漏判（264 时都报"无截断"，实际已截），**只能看图**。
 - 同一实例的**桌面 app**：VM 上的 DSH 以 `--remote-debugging-port=9222` 启动，直连 `dsh-app://app/` 这个 target 即可（**不需要**伪造 auth cookie，也别选 `welcome.html`）。窗口被最小化/后台时会节流（RO 与 rAF 延迟数秒、`Input.dispatchMouseEvent` 超时），先 `Emulation.setFocusEmulationEnabled` + `Page.setWebLifecycleState: active`。
 - 单元测试在沙箱里用 `node --test` 会 `spawn EPERM`（runner 要起子进程）：直接 `node test/dock.test.js`。
 - **不要用「卡片上显示的版本号」证明客户端已热更新**（2026-11-19 实测教训）：dsh-codex-advisor 的版本号来自 host 快照（`props.version` ← `data?.source?.version`），不是 client bundle 常量，显示 v0.10.1 时其 client.js 文件早已是 0.10.2。要证客户端生效，只能用「行为指纹」（发版时故意改一段可见文字/属性）或 CDP 读 `window.__dshPanelDock.version`；拿不准就别声称，直接让用户重启。
