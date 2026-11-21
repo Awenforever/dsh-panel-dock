@@ -20,9 +20,11 @@ const dock = window.__dshPanelDock   // present once the dock plugin is active
 
 const dispose = dock.define({
   id: 'my-panel',        // required, unique
-  title: 'My panel',     // label, for hosts that show one
+  title: 'My panel',     // label, shown by CardShell and hosts
+  order: 100,            // stacking position, ascending; ties keep registration order
   side: 'left',          // 'left' (default) | 'right'
   minWidth: 280,         // width below which your content stops being useful (default 280)
+  version: '1.2.3',      // optional; shown by CardShell next to the title
   component: MyPanel,    // required, a React component
 })
 ```
@@ -32,7 +34,7 @@ existing id replaces the earlier definition. It returns a `dispose()` that unreg
 
 | call | returns |
 |---|---|
-| `dock.panels()` | `[{ id, title, order, side, minWidth }]` in registration order |
+| `dock.panels()` | `[{ id, title, order, side, minWidth, version }]` in stacking order |
 | `dock.getSide(id)` | `'left' \| 'right'` |
 | `dock.setSide(id, side)` | the side that was stored |
 | `dock.toggleSide(id)` | the new side |
@@ -58,7 +60,9 @@ The choice is persisted per panel id, so a reload restores it.
 | `right` | `shell.overlay` | band between the transcript handle and the turn rail, 6px gap |
 
 With nothing on the right the band does not exist at all: no reserved width, no overlay, no click
-target. Stacking is first-come-first-served in both hosts — a numeric `order` never reorders it.
+target. Stacking is `order` ascending (missing = 100) in both hosts; cards with the same `order` keep
+registration order. `order` is how a card states "I belong above/below the others"; it does not affect
+anything else.
 
 ### Right band anchors
 
@@ -97,11 +101,12 @@ the conversation area's right edge — it never draws on that panel.
    `h('div', { ...rest, style: { ...style, /* yours */ } })`.
 2. Never position yourself: no `position: fixed`, no explicit width, no margins used to fight the
    dock. The dock owns placement.
-3. Your element is the visual rectangle. The dock adds no border, radius, padding or title bar — the
-   card's own shell (border, radius, background, shadow) stays.
+3. Your element is the visual rectangle. The dock adds no border, radius, padding or title bar by
+   itself — the card's own shell (border, radius, background, shadow) stays. If you want the shared
+   top bar, render `dock.CardShell` (below); it draws only the header row, never your body.
 4. Give it an **intrinsic height** in both hosts. The dock supplies width, flex reset and the 6px
-   stack gap, nothing more: `order` and `height` in a definition are accepted for compatibility but
-   have no layout effect in 0.3.x.
+   stack gap, nothing more. `order` decides stacking; `height` is accepted for compatibility but has
+   no layout effect.
 5. **Do not depend on your DOM parent.** Since 0.4.0 each card lives in a container that
    the dock *moves* between the sidebar stack and the band, so that switching sides never
    remounts you (your state and scroll survive). Parent selectors, `closest()` lookups for
@@ -122,6 +127,52 @@ exact rectangle it had, and the scrollport's clip line lands in the gutter inste
 shadow. Scrolling is wheel/trackpad only: no scrollbar is drawn, because a bar in the gutter would
 sit beside the cards as a foreign affordance. While scrolling, a card is cut at the gutter edge,
 16px outside the band.
+
+
+## CardShell — the optional shared top bar
+
+A card is a *sidebar card* (侧栏卡片): it lives in the sidebar stack or the band. `dock.CardShell` is
+the one shared header row for those cards — a monochrome logo that *is* the side toggle, the title,
+and a quiet version. It is **not** a layout container: your frame and body stay yours.
+
+```js
+const CardShell = dock.CardShell
+
+function MyCard(props) {
+  return h(CardShell, Object.assign({}, props, { id: 'my-panel', actions: h(RefreshButton) }),
+    h(MyBody))                       // ← your frame + content, unchanged
+}
+```
+
+| prop | meaning |
+|---|---|
+| `id` | required; the registered panel id (the shell reads title/version from it) |
+| `title`, `version` | optional overrides for what `define` declared |
+| `actions` | optional node rendered at the right end (keep it small; it shares the row) |
+| `style` | merged into the header row |
+
+The toggle inside the shell calls `dock.toggleSide(id)`, so the logo is the only control a card needs
+for moving between sides. Its aria-label and tooltip follow the dock's locale.
+
+**Terminology**: `panel` alone means a *main-area panel* (a full page hosted by DSH — dsh-loci's
+five-view view, for example); anything the dock hosts is a **sidebar card** (侧栏卡片). The dock never
+hosts a main-area panel.
+
+## Appearance spec (SSOT)
+
+The dock owns no visuals, but cards look consistent when they follow one spec. This table is the
+contract; it is the measured convention of the shipped cards, not an invention.
+
+| | left stack (inside the sidebar) | right band (floating over the conversation) |
+|---|---|---|
+| frame | `padding: 10px 9px 8px`, `border: 1px solid var(--dsw-alias-border-l1)`, `border-radius: 12` | same |
+| background | `var(--dsw-alias-bg-layer-1)` | `var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-module-platform))` |
+| shadow | `0 3px 12px rgba(0, 0, 0, 0.16)` | `0 3px 12px rgba(15, 23, 42, 0.06)` — same shape, lighter and cooler: a black cast reads as dirt in the narrow gap between two plates |
+| header | `dock.CardShell`: 13px/600 title, 10px secondary version, 18px monochrome logo | same |
+| numbers | `font-variant-numeric: tabular-nums` | same |
+
+Theme: use `--dsw-alias-*` tokens only — they inherit light/dark from the host. The one value that
+does not adapt is the hard-coded shadow rgba; keep it as above (both are light enough for dark mode).
 
 ## Readiness
 

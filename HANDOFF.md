@@ -16,12 +16,12 @@
 | 项 | 值 |
 |---|---|
 | 仓库 | `github.com/Awenforever/dsh-panel-dock` |
-| 版本 | `0.4.0`（0.3.21 最小可读宽度；0.3.22–23 `minWidth` 声明字段；**0.4.0 渲染改为 portal 托盘，切边不再重挂卡片**） |
+| 版本 | `0.5.0`（0.3.21 最小可读宽度；0.3.22–23 `minWidth`；0.4.0 portal 托盘；**0.4.1 `order` 排序；0.5.0 可选 `CardShell` + 术语统一**） |
 | npm | **未发布** |
 | 运行载体 | client 模块：`window.__ModuleLoader__.load({ id: 'dsh-panel-dock' })` |
 | 宿主槽位 | `sidebar.footer.action`（左栈）、`shell.overlay`（右带） |
 | 持久化 | `localStorage["dsh.panel-dock.v1"] = { sides: { [id]: "left" \| "right" } }` |
-| 已部署 | invictus 0.4.0（重启后 CDP 实测 `window.__dshPanelDock.version`）/ VM win11-test 0.4.0 |
+| 已部署 | invictus 0.5.0（CDP 实测 `window.__dshPanelDock.version`）/ VM win11-test 0.4.0（机器离线，未更新） |
 | 注册表 | `window.__dshPanelDockRegistry`（Map，跨热更新存活） |
 | 监听器 | `window.__dshPanelDockListeners`（Set） |
 
@@ -39,13 +39,22 @@
 
 **对卡片的额外要求**：不要依赖 DOM 父节点（容器会在左栈/右带之间搬动）。父选择器、`closest()` 找宿主、依赖 DOM 层级定位的写法都会失效。
 
+## 2.2 术语（2026-11-21 用户统一）
+
+| 词 | 指什么 | 宿主 |
+|---|---|---|
+| **侧栏卡片**（sidebar card） | dock 承载的卡片，左栈或右带 | **panel-dock** |
+| **主区域面板**（main-area panel） | 整页视图（如 dsh-loci 的五视图） | DSH 宿主，**不在 dock** |
+
+单独说 "panel" 时一律指主区域面板；dock 里的东西一律叫侧栏卡片。组件命名同理：`CardShell`，不是 PanelShell。
+
 ## 3. 公开 API（消费者唯一契约）
 
 ```js
 window.__dshPanelDock = {
   version,                 // 字符串
   define(definition),      // 返回 dispose()
-  panels(),                // [{ id, title, order, side }]
+  panels(),                // [{ id, title, order, side, minWidth, version }]
   getSide(id),             // 'left' | 'right'
   setSide(id, side),       // 返回最终 side
   toggleSide(id),          // 返回新 side
@@ -53,11 +62,12 @@ window.__dshPanelDock = {
 }
 ```
 
-`define({ id, title, order, side, minWidth, component })`：`id` 非空、`component` 必须是函数；同 id 重复注册会覆盖。
+`define({ id, title, order, side, minWidth, version, component })`：`id` 非空、`component` 必须是函数；同 id 重复注册会覆盖。
 `minWidth`（0.3.22）：面板声明「低于这个宽度我的内容就不再有意义」，正整数 px，钳到 [120, 480]，缺省 280。
 dock 保证**右带**里永不窄于它；空白不够时只取走差额。`panels()` 会把解析后的 `minWidth` 一并返回（左右两侧都返回，供调用方判断）。
 注意 `minWidth` **不约束左栈**：左栈宽度=侧边栏宽度（host/用户决定），dock 不能加宽。
-`order` 目前**不参与排序**——堆叠顺序是注册先后（先来后到）。
+`order` 决定堆叠：**升序，缺省 100，同值保持注册序**（0.4.1）。`version`（字符串/数字，可选）由 `CardShell` 显示。
+`CardShell`（0.5.0）：可选共享顶栏组件，`h(dock.CardShell, { id, actions? }, 卡片主体)`；只画顶栏（logo=侧别切换 + 标题 + 版本），不是布局容器。已实测：渲染、点击换边、aria 文案翻转均正常。
 
 ## 4. 面板组件契约
 
@@ -168,6 +178,10 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 - **不要用「卡片上显示的版本号」证明客户端已热更新**（2026-11-19 实测教训）：dsh-codex-advisor 的版本号来自 host 快照（`props.version` ← `data?.source?.version`），不是 client bundle 常量，显示 v0.10.1 时其 client.js 文件早已是 0.10.2。要证客户端生效，只能用「行为指纹」（发版时故意改一段可见文字/属性）或 CDP 读 `window.__dshPanelDock.version`；拿不准就别声称，直接让用户重启。
 
 先 VM（`win11-test`，`king@100.108.63.25`，密钥 `~/.ssh/id_tailnet`）验证，再同步 invictus。
+
+## 8.1 外观规格（SSOT）
+
+规格全文在 README 的 "Appearance spec (SSOT)"：左右两套 frame / 背景 / 阴影 / 字号，全部是现役卡片的实测约定。消费者只写指针，**不复制**——两份必然漂移。
 
 ## 9. 消费者现状
 

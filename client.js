@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.4.0'
+    const VERSION = '0.5.0'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -45,8 +45,8 @@ window.__ModuleLoader__.load({
     // a hard-edged rectangle. Cards own their shadow, and it has to fall naturally the
     // way it does in the sidebar.
 
-    const zh = { empty: '暂无面板' }
-    const en = { empty: 'No panels yet' }
+    const zh = { empty: '暂无面板', toLeft: '移到左侧', toRight: '移到右侧' }
+    const en = { empty: 'No panels yet', toLeft: 'Move to the left panel', toRight: 'Move to the right panel' }
     let T = (key) => key
 
     // The registry lives on the window, not in this module's closure: a hot reload of
@@ -67,10 +67,16 @@ window.__ModuleLoader__.load({
 
     function emit() { for (const fn of listeners) { try { fn() } catch {} } }
     function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) }
-    // Stacking is first-come-first-served: the Map keeps registration order, so a
-    // panel never jumps above one that arrived earlier because of a numeric field.
+    // Stacking order: `order` ascending (missing = 100), ties keep registration order.
+    // Registration order alone made a card's position depend on which plugin happened to
+    // activate first -- nothing a card could reason about or fix from its own side.
+    function orderOf(panel) {
+      const value = Number(panel.order)
+      return Number.isFinite(value) ? value : 100
+    }
     function panels() {
-      return [...registry.values()]
+      // Array.prototype.sort is stable, so equal orders keep the Map's registration order.
+      return [...registry.values()].sort((a, b) => orderOf(a) - orderOf(b))
     }
 
     function readSides() {
@@ -127,7 +133,12 @@ window.__ModuleLoader__.load({
       const minWidth = Number.isFinite(declared) && declared > 0
         ? Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR, Math.round(declared)))
         : DEFAULT_MIN_WIDTH
-      registry.set(definition.id, Object.assign({}, definition, { minWidth }))
+      // version is what a shared CardShell shows next to the title; it is the plugin's
+      // own version, not the dock's.
+      const version = typeof definition.version === 'string' || typeof definition.version === 'number'
+        ? String(definition.version)
+        : null
+      registry.set(definition.id, Object.assign({}, definition, { minWidth, version }))
       emit()
       return () => { registry.delete(definition.id); emit() }
     }
@@ -636,6 +647,95 @@ window.__ModuleLoader__.load({
       return h(React.Fragment, null, nodes)
     }
 
+
+    // CardShell: the one shared top bar for a 侧栏卡片 (a card the dock hosts). It is NOT
+    // a layout container -- the card still renders its own frame and body; the shell is
+    // only the row above them: [logo = side toggle] [title] [version] ... [actions].
+    const SHELL_STYLE = {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      minWidth: 0,
+      marginBottom: 6,
+      color: 'var(--dsw-alias-label-primary)',
+    }
+    const SHELL_TOGGLE_STYLE = {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 18,
+      height: 18,
+      padding: 0,
+      border: 0,
+      borderRadius: 4,
+      background: 'transparent',
+      color: 'inherit',
+      cursor: 'pointer',
+      flex: '0 0 auto',
+    }
+    const SHELL_TITLE_STYLE = {
+      fontSize: 13,
+      fontWeight: 600,
+      lineHeight: 1.2,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      minWidth: 0,
+    }
+    const SHELL_VERSION_STYLE = {
+      fontSize: 10,
+      fontWeight: 400,
+      lineHeight: 1.2,
+      color: 'var(--dsw-alias-label-secondary)',
+      flex: '0 0 auto',
+    }
+    const SHELL_ACTIONS_STYLE = { display: 'inline-flex', alignItems: 'center', gap: 4, flex: '0 0 auto' }
+
+    // Monochrome logo that doubles as the side toggle: a panel glyph with an arrow
+    // pointing at the side the card would move to.
+    function shellLogo(docked) {
+      return h('svg', {
+        width: 15, height: 15, viewBox: '0 0 16 16', fill: 'none',
+        'aria-hidden': 'true', focusable: 'false',
+      },
+        h('rect', { x: 1.6, y: 2.6, width: 12.8, height: 10.8, rx: 2.4, stroke: 'currentColor', strokeWidth: 1.3 }),
+        h('path', { d: docked ? 'M10.4 2.8 V13.2' : 'M5.6 2.8 V13.2', stroke: 'currentColor', strokeWidth: 1.3 }),
+        h('path', {
+          d: docked ? 'M7.1 6.4 L5.3 8 L7.1 9.6' : 'M8.9 6.4 L10.7 8 L8.9 9.6',
+          stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round', strokeLinejoin: 'round',
+        }),
+      )
+    }
+
+    function CardShell(props) {
+      const id = props.id
+      const [, force] = React.useState(0)
+      React.useEffect(() => subscribe(() => force((n) => n + 1)), [])
+      const panel = registry.get(id)
+      const side = sideOf(id, panel ? panel.side : 'left')
+      const docked = side === 'right'
+      const title = props.title || (panel && panel.title) || id
+      const version = props.version || (panel && panel.version) || null
+      const label = docked ? T('toLeft') : T('toRight')
+      return h('div', {
+        'data-panel-dock-shell': id,
+        style: Object.assign({}, SHELL_STYLE, props.style),
+      },
+        h('button', {
+          type: 'button',
+          'data-panel-dock-shell-toggle': '',
+          'aria-label': label,
+          title: label,
+          onClick: () => { try { toggleSide(id) } catch {} },
+          style: SHELL_TOGGLE_STYLE,
+        }, shellLogo(docked)),
+        h('span', { style: SHELL_TITLE_STYLE, title }, title),
+        version ? h('span', { style: SHELL_VERSION_STYLE }, 'v' + version) : null,
+        h('span', { style: { flex: '1 1 auto', minWidth: 0 } }),
+        props.actions ? h('span', { style: SHELL_ACTIONS_STYLE }, props.actions) : null,
+      )
+    }
+
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-panel-dock: locale')
       T = ctx.locale.bind(NS)
@@ -653,7 +753,8 @@ window.__ModuleLoader__.load({
         window.__dshPanelDock = {
           version: VERSION,
           define,
-          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), minWidth: p.minWidth })),
+          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), minWidth: p.minWidth, version: p.version })),
+          CardShell,
           getSide: (id) => sideOf(id, registry.has(id) ? registry.get(id).side : 'left'),
           setSide,
           toggleSide,
