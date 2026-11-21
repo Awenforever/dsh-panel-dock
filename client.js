@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.2'
+    const VERSION = '0.6.3'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -343,6 +343,16 @@ window.__ModuleLoader__.load({
       const vw = typeof window === 'undefined' ? 0 : window.innerWidth
       const areaEdge = Math.min(vw, anchors && anchors.areaRight ? anchors.areaRight : vw)
       const limit = areaEdge - GAP
+      // The band only makes sense beside a conversation. Other main-area surfaces (a plugin
+      // panel, settings) have no conversation column, no splitter and no turn rail -- with no
+      // surface to dock against, the band used to pin itself to the window top-right corner and
+      // cover that page. Fall back to the sidebar stack instead.
+      const hasSurface = Boolean(anchors) && (
+        (anchors.handleRight !== null && anchors.handleRight !== undefined)
+        || (anchors.areaRight !== null && anchors.areaRight !== undefined)
+        || (anchors.railRight !== null && anchors.railRight !== undefined)
+      )
+      if (!hasSurface) return { mode: 'fallback', width: 0, limit }
       const hasRail = Boolean(anchors) && anchors.railRight !== null && anchors.railRight !== undefined
       // A conversation without turns has no rail yet. That is not "no space": the column
       // simply runs to its own right edge, and that edge is the boundary the band must
