@@ -141,7 +141,9 @@ function MyCard(props) {
   return h('div', Object.assign({}, props, {
     style: Object.assign({}, props.style, myFrame),   // your frame; `style` goes last
   }),
-    h(CardShell, { id: 'my-panel', actions: h(RefreshButton) }),   // the header row only
+    // The shell already renders the version from `define({ version })`. Put *state* here
+    // ("up to date", a spinner, a badge) -- never a second copy of the version.
+    h(CardShell, { id: 'my-panel', actions: h(StateChip) }),
     h(MyBody),                                                     // your body, a sibling
   )
 }
