@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.5.2'
+    const VERSION = '0.6.0'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -535,7 +535,17 @@ window.__ModuleLoader__.load({
         return () => { tray.poke = null }
       }, [])
 
+      const right = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
+      const needsBand = right.length > 0
+
       React.useEffect(() => {
+        // Nothing lives on the right: the anchors are irrelevant, and measuring them is a
+        // full-document scan plus ~20 layout reads. Polling that while every card sits in
+        // the sidebar made the dock the busiest thing on the page for no benefit.
+        if (!needsBand) {
+          setAnchors(null)
+          return undefined
+        }
         let raf = 0
         const sync = () => {
           raf = 0
@@ -544,16 +554,28 @@ window.__ModuleLoader__.load({
           if (measureStack.current) measureStack.current()
         }
         const schedule = () => { if (!raf) raf = requestAnimationFrame(sync) }
+        schedule()
         window.addEventListener('resize', schedule)
-        const timer = setInterval(schedule, 700)
+        // The band's anchors move when the window resizes, when the right sidebar opens or
+        // closes, or when the conversation column is dragged -- all of them resize the
+        // column, so observing it replaces the old 700ms poll. The timer stays as a slow
+        // safety net for anything that moves without changing the column's size.
+        let observer = null
+        if (typeof ResizeObserver !== 'undefined') {
+          observer = new ResizeObserver(schedule)
+          const tabs = document.querySelector('[data-conversation-tabs]')
+          const column = tabs && (tabs.parentElement || tabs)
+          if (column) observer.observe(column)
+        }
+        const timer = setInterval(schedule, 2500)
         return () => {
           window.removeEventListener('resize', schedule)
+          if (observer) observer.disconnect()
           clearInterval(timer)
           if (raf) cancelAnimationFrame(raf)
         }
-      }, [])
+      }, [needsBand])
 
-      const right = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
       const top = anchors ? anchors.top : 8
       const required = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR,
         right.reduce((widest, panel) => Math.max(widest, panel.minWidth || DEFAULT_MIN_WIDTH), 0)))
