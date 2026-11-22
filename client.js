@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.3'
+    const VERSION = '0.6.4'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -50,10 +50,10 @@ window.__ModuleLoader__.load({
     // a hard-edged rectangle. Cards own their shadow, and it has to fall naturally the
     // way it does in the sidebar.
 
-    const zh = {
+    const zh = { bandUnavailable: '此页无对话区',
       empty: '暂无面板', toLeft: '移到左侧', toRight: '移到右侧', cardCrashed: '渲染失败（已隔离）',
     }
-    const en = {
+    const en = { bandUnavailable: 'No conversation on this page',
       empty: 'No panels yet', toLeft: 'Move to the left panel', toRight: 'Move to the right panel',
       cardCrashed: 'failed to render (isolated)',
     }
@@ -223,6 +223,7 @@ window.__ModuleLoader__.load({
       let areaRight = null
       let areaLeft = null
       let railInfo = null
+      let pageTop = 0
       try {
         const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
           .find((el) => el.getAttribute('data-side') === 'right')
@@ -244,6 +245,11 @@ window.__ModuleLoader__.load({
           .filter((mark) => handleRight === null || mark.left > handleRight)
         const rail = railColumn(railMarks)
         railInfo = rail !== null ? { right: rail.left - GAP, railRight: rail.right } : null
+        const pageTabs = document.querySelector('[role="tablist"]')
+        if (pageTabs) {
+          const pr = box(pageTabs)
+          if (pr.width > 0) pageTop = Math.round(pr.bottom) + GAP
+        }
         const tabs = document.querySelector('[data-conversation-tabs]')
         if (tabs) {
           top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
@@ -286,7 +292,7 @@ window.__ModuleLoader__.load({
           railRight = railMemory.railRight
         }
       } catch {}
-      return { left, right, top, handleLeft, handleRight, railRight, areaRight, areaLeft }
+      return { left, right, top, handleLeft, handleRight, railRight, areaRight, areaLeft, pageTop }
     }
 
     function sameAnchors(a, b) {
@@ -352,7 +358,10 @@ window.__ModuleLoader__.load({
         || (anchors.areaRight !== null && anchors.areaRight !== undefined)
         || (anchors.railRight !== null && anchors.railRight !== undefined)
       )
-      if (!hasSurface) return { mode: 'fallback', width: 0, limit }
+      if (!hasSurface) {
+        const t = (anchors && anchors.pageTop) || 56
+        return { mode: 'page', pageTop: t, rightEdge: limit, width: Math.min(required, MAX_PANEL_WIDTH), limit }
+      }
       const hasRail = Boolean(anchors) && anchors.railRight !== null && anchors.railRight !== undefined
       // A conversation without turns has no rail yet. That is not "no space": the column
       // simply runs to its own right edge, and that edge is the boundary the band must
@@ -411,7 +420,7 @@ window.__ModuleLoader__.load({
       }, [])
 
       const items = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
-      const top = anchors ? anchors.top : 8
+      const top = plan.mode === 'page' ? plan.pageTop : (anchors ? anchors.top : 8)
       // Default 280 applies only to a panel that declared nothing; a panel that says it
       // can live with 160 gets 160, so it never takes more text than it needs.
       const required = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR,
@@ -596,7 +605,12 @@ window.__ModuleLoader__.load({
         let observer = null
         if (typeof ResizeObserver !== 'undefined') {
           observer = new ResizeObserver(schedule)
-          const tabs = document.querySelector('[data-conversation-tabs]')
+          const pageTabs = document.querySelector('[role="tablist"]')
+        if (pageTabs) {
+          const pr = box(pageTabs)
+          if (pr.width > 0) pageTop = Math.round(pr.bottom) + GAP
+        }
+        const tabs = document.querySelector('[data-conversation-tabs]')
           const column = tabs && (tabs.parentElement || tabs)
           if (column) observer.observe(column)
         }
@@ -609,11 +623,12 @@ window.__ModuleLoader__.load({
         }
       }, [needsBand])
 
-      const top = anchors ? anchors.top : 8
+      const top = plan.mode === 'page' ? plan.pageTop : (anchors ? anchors.top : 8)
       const required = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR,
         right.reduce((widest, panel) => Math.max(widest, panel.minWidth || DEFAULT_MIN_WIDTH), 0)))
       const plan = planBand(anchors, required)
       const inBand = plan.mode !== 'fallback' && right.length > 0
+      React.useEffect(() => { setFallback(plan.mode === 'fallback') }, [plan.mode])
 
       // Placement: every frame after render, put each cell into the stack that owns it.
       React.useEffect(() => {
@@ -810,11 +825,13 @@ window.__ModuleLoader__.load({
       const [, force] = React.useState(0)
       React.useEffect(() => subscribe(() => force((n) => n + 1)), [])
       const panel = registry.get(id)
-      const side = sideOf(id, panel ? panel.side : 'left')
+      const preferred = sideOf(id, panel ? panel.side : 'left')
+      const side = effectiveSide(id)
       const docked = side === 'right'
+      const blocked = preferred !== side
       const title = props.title || (panel && panel.title) || id
       const version = props.version || (panel && panel.version) || null
-      const label = docked ? T('toLeft') : T('toRight')
+      const label = blocked ? T('bandUnavailable') : (docked ? T('toLeft') : T('toRight'))
       return h('div', {
         'data-panel-dock-shell': id,
         style: Object.assign({}, SHELL_STYLE, props.style),
@@ -824,8 +841,9 @@ window.__ModuleLoader__.load({
           'data-panel-dock-shell-toggle': '',
           'aria-label': label,
           title: label,
-          onClick: () => { try { toggleSide(id) } catch {} },
-          style: SHELL_TOGGLE_STYLE,
+          disabled: blocked,
+          onClick: () => { try { if (!blocked) toggleSide(id) } catch {} },
+          style: blocked ? Object.assign({}, SHELL_TOGGLE_STYLE, { opacity: 0.4, cursor: 'default' }) : SHELL_TOGGLE_STYLE,
         }, shellLogo(docked)),
         h('span', { style: SHELL_TITLE_STYLE, title }, title),
         version ? h('span', { style: SHELL_VERSION_STYLE }, 'v' + version) : null,
@@ -885,6 +903,12 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function effectiveSide(id) {
+      const panel = registry.get(id)
+      const preferred = sideOf(id, panel ? panel.side : 'left')
+      return preferred === 'right' && placement.fallback ? 'left' : preferred
+    }
+
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-panel-dock: locale')
       T = ctx.locale.bind(NS)
@@ -901,7 +925,8 @@ window.__ModuleLoader__.load({
       const api = {
           version: VERSION,
           define,
-          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), minWidth: p.minWidth, version: p.version })),
+          placementOf: effectiveSide,
+          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version })),
           CardShell,
           getSide: (id) => sideOf(id, registry.has(id) ? registry.get(id).side : 'left'),
           setSide,
