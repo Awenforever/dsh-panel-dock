@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.4'
+    const VERSION = '0.6.5'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -420,12 +420,12 @@ window.__ModuleLoader__.load({
       }, [])
 
       const items = all.filter((panel) => sideOf(panel.id, panel.side) === 'right')
-      const top = plan.mode === 'page' ? plan.pageTop : (anchors ? anchors.top : 8)
       // Default 280 applies only to a panel that declared nothing; a panel that says it
       // can live with 160 gets 160, so it never takes more text than it needs.
       const required = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR,
         items.reduce((widest, panel) => Math.max(widest, panel.minWidth || DEFAULT_MIN_WIDTH), 0)))
       const plan = planBand(anchors, required)
+      const top = plan.mode === 'page' ? plan.pageTop : (anchors ? anchors.top : 8)
 
       // Publish the decision so the sidebar stack can take the cards over.
       React.useEffect(() => { setFallback(plan.mode === 'fallback') })
@@ -623,10 +623,10 @@ window.__ModuleLoader__.load({
         }
       }, [needsBand])
 
-      const top = plan.mode === 'page' ? plan.pageTop : (anchors ? anchors.top : 8)
       const required = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_WIDTH_FLOOR,
         right.reduce((widest, panel) => Math.max(widest, panel.minWidth || DEFAULT_MIN_WIDTH), 0)))
       const plan = planBand(anchors, required)
+      const top = plan.mode === 'page' ? plan.pageTop : (anchors ? anchors.top : 8)
       const inBand = plan.mode !== 'fallback' && right.length > 0
       React.useEffect(() => { setFallback(plan.mode === 'fallback') }, [plan.mode])
 
