@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.5'
+    const VERSION = '0.6.6'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -897,9 +897,9 @@ window.__ModuleLoader__.load({
     }
 
     // A sealed slot entry renders nothing instead of throwing into the host.
-    function seal(Component, name) {
+    function seal(Component, name, Alt) {
       return function SealedSlot() {
-        return h(CardBoundary, { id: name, fallback: null }, h(Component))
+        return h(CardBoundary, { id: name, fallback: Alt ? () => h(Alt) : null }, h(Component))
       }
     }
 
@@ -914,8 +914,8 @@ window.__ModuleLoader__.load({
       T = ctx.locale.bind(NS)
       // The tray keeps cards mounted when they change hosts; without portals the dock
       // falls back to rendering each host directly (0.3.x behaviour, cards remount).
-      const leftHost = seal(createPortal ? LeftSlot : LeftHost, 'panel-dock-left')
-      const rightHost = seal(createPortal ? TrayHost : RightHost, 'panel-dock-right')
+      const leftHost = createPortal ? seal(LeftSlot, 'panel-dock-left', LeftHost) : seal(LeftHost, 'panel-dock-left')
+      const rightHost = createPortal ? seal(TrayHost, 'panel-dock-right', RightHost) : seal(RightHost, 'panel-dock-right')
       ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
         name: 'sidebar.footer.action', id: 'panel-dock-left', order: 900, locale: NS,
       }, leftHost))

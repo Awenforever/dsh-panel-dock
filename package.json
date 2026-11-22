@@ -1,6 +1,6 @@
 {
   "name": "dsh-panel-dock",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "One owner for plugin panels: a real right-hand column beside the conversation, plus a managed left stack.",
   "type": "module",
   "license": "MIT",
