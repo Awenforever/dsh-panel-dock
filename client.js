@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.6'
+    const VERSION = '0.6.7'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -149,9 +149,18 @@ window.__ModuleLoader__.load({
         ? String(definition.version)
         : null
       revisions.set(definition.id, revisionOf(definition.id) + 1)
-      registry.set(definition.id, Object.assign({}, definition, { minWidth, version }))
+      // Keep the exact record so the disposer can tell "mine" from "a newer one's".
+      const stored = Object.assign({}, definition, { minWidth, version })
+      registry.set(definition.id, stored)
       emit()
-      return () => { registry.delete(definition.id); emit() }
+      return () => {
+        // HMR race: when a module reloads, the new instance defines first and the old
+        // one disposes second. Deleting by id alone would remove the *new* registration
+        // and leave the card defined nowhere. Only remove the record we created.
+        if (registry.get(definition.id) !== stored) return
+        registry.delete(definition.id)
+        emit()
+      }
     }
 
     function useRegistry() {
@@ -926,6 +935,13 @@ window.__ModuleLoader__.load({
           version: VERSION,
           define,
           placementOf: effectiveSide,
+          // Consumers use this to decide whether their native fallback must draw: with the
+          // dock present but their registration missing, neither side used to render.
+          has: (id) => registry.has(id),
+          panel: (id) => {
+            const p = registry.get(id)
+            return p ? { id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version } : null
+          },
           panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version })),
           CardShell,
           getSide: (id) => sideOf(id, registry.has(id) ? registry.get(id).side : 'left'),
