@@ -193,6 +193,25 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 - 绘制成本随视口面积走（2026-11-21 实测，running 态）：1936x996（1.9 Mpx）program 2239ms/8s = 25%、idle 72%；2575x1407 dSF1.5（8.1 Mpx）program 4391ms/8s = 49%、idle 49%。JS 始终约 1%，rAF 回调 0。用户真实窗口 3862x2110 设备像素（dpi 144），renderer 满核是 native 光栅/合成成本，不是插件 JS。
 - 暂停状态点动画的 A/B（同一 8.1 Mpx 视口、同一 running 会话，2026-11-21）：动画在跑时 program 4391ms/8s（49%）、idle 49%；全部暂停后 program 926ms/8s（10%）、idle 88%。两端 JS 都约 1%。结论：renderer 满核来自持续动画引发的大面积 native 重光栅，与插件 JS 无关；每个 running 会话的转圈点（spin+dash 两个无限动画）是最小可复现触发源，数量随 running 会话数线性增长。
 
+### 真实窗口 paint/layer 实测（2026-11-24，path C: CDP 9222，用户 Electron 渲染进程）
+
+环境：1920×983 CSS、dpr=1、4536 个节点、**10 个无限动画**（`_dsh-state-dot-spin/dash` × 若干 + `_dsh-row-shimmer-sweep/highlight`），当时 5 个会话处于 running。
+
+| 20 秒窗口 | TaskDuration | Script | Layout | Style | paint 次数 |
+|---|---|---|---|---|---|
+| 动画在跑 | **17731ms (88.7%)** | 1710ms | **1975ms** | 1260ms | **4631** |
+| 全部暂停 | 5745ms (28.7%) | 2021ms | **115ms** | 629ms | **151** |
+
+paint 次数 −97%，Layout 时间 −94%，主线程占用 −68%。
+
+逐图层（在跑的 20 秒内）：
+- `22×22` 的两个小图层各被重绘 **2239 次**（≈112 次/秒）——就是侧栏那个转圈点；**它们没有被提升成独立合成层**，每帧都在光栅化。
+- 整窗 `1920×983` 图层重绘 24 次（滚动/光标/流式文本等）。
+
+CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（native 光栅/合成）、`(idle)` 9.3%、JS 合计约 3%（`get` 143ms、`scrollMetrics` 79ms、`getBoundingClientRect` 49ms）。
+
+结论：renderer 满核 = **native 重光栅**，触发源是每个 running 会话那两个无限动画（SVG 里的 transform/dash 未被合成），与三家插件 JS 无关。缓解：减少 running 会话数（线性）；根治：宿主把点改成合成层动画或去掉 dash。
+
 ## 8.3 卡片全消失的两种成因（2026-11-22 / 11-24 实测）
 
 **① 运行期崩溃（0.6.4，已修）**：`top` 那行引用了尚未初始化的 `plan`（TDZ），每次渲染抛 `ReferenceError`；槽位密封层把整块渲染成 null，于是**一张卡崩 → 所有卡消失**。0.6.5 修 TDZ；0.6.6 再加一层：托盘崩了就退回旧的左右宿主（卡片最多重挂一次，不会再整块空）。
