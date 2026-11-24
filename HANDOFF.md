@@ -25,7 +25,7 @@
 | 注册表 | `window.__dshPanelDockRegistry`（Map，跨热更新存活） |
 | 监听器 | `window.__dshPanelDockListeners`（Set） |
 
-`client.js` 是唯一运行时代码；`dock-core.js` 只服务单元测试（client 模块加载器不支持相对 require，核心逻辑在 client.js 内联了一份）。
+`client.js` 是唯一运行时代码；`dock-core.js` 只服务单元测试（client 模块加载器不支持相对 require，核心逻辑在 client.js 内联了一份）。自 0.6.13 起 `dock-core.js` 是**现役几何的纯模型**，并用「读 client.js 源码比对常量」的用例防止两边漂移。
 
 ## 2.1 渲染架构（0.4.0）
 
@@ -1122,8 +1122,8 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 ## 10. 未决项
 
 - npm 是否发布（用户尚未批准）。tag 已有 `v0.3.12` / `v0.3.13` / `v0.3.15` / `v0.3.17` / `v0.3.21` / `v0.3.23` / `v0.4.0`。
-- `dock-core.js` + `test/dock.test.js` 仍在测**已删除**的模型（width / collapse / open / height 模式 / order 排序）：10/10 绿但不覆盖任何现役几何。要么删、要么按现役逻辑（side 解析 + 带宽公式）重写，待用户定。
-- 左侧栈溢出未验证（宿主 sidebar 自身是否滚动）——右侧已解决，左侧未测。
+- **已解决（0.6.13，2026-11-25）**：`dock-core.js` + `test/dock.test.js` 已按**现役**几何重写（不再测 width/collapse/open/height/order 那套已删除的模型）。11 个用例覆盖：0×0 隐藏锚点不算锚点、轮次轨必须是列（单个散落按钮不算）、inner/outer/intrude/fallback 四态、轨迹/看板（有页签无轮次轨）贴右缘、主区域页面 plan（满宽保宽 / 真空槽才缩 / 首帧用 required）、侧别解析。**另加漂移守卫**：用例直接读 `client.js` 源码，断言 `GAP / MIN_WIDTH_FLOOR / MAX_PANEL_WIDTH / DEFAULT_MIN_WIDTH / MAX_COVER_RATIO` 与 `VERSION` 字面量仍与本模型一致——常量改了没同步就红。跑法：`node --test test/dock.test.js`（需 node 绝对路径）。
+- **已解决（0.6.13）**：左侧栈溢出。宿主 sidebar 不给滚动（`overflow-y: visible`，窗口边缘直接裁），1280×560 实测最后一张卡 bottom=567 > 560 且祖先链无可滚动容器 → 够不到。修法 `syncLeftStackScroll()`：`rect.top` 之下的可用高度作 `max-height`，溢出时 `overflow-y:auto` + `scrollbar-width:thin` + 打 `data-panel-dock-left-scrolls`。实测 `sh 459 / ch 434`，滚 25px 后最后一张 bottom 542 ≤ 560（可见）。
 - 无 `createPortal` 的旧宿主退回路径只做过静态核对（`apply()` 二选一 + 旧实现原样），**没有运行时验证**：手上没有那种宿主。
 - 0.4.0 的六态验证记录：inner（2571 宽 → 480）、intrude（1887 宽 → 280）、outer（VM 合成锚点 → 480）、fallback（470 宽 → 全部回左侧栈、无条带）、mixed、overflow（滚动 + 阴影留白）。
 - **已解决（0.4.0）**：左右切换重挂卡片 → 改 portal 托盘后实测不复现（`sameNode: true`、切边全程无「加载中…」）。遗留观察项：React 事件现在冒泡到 Tray 而不是宿主树，若将来有宿主逻辑依赖「侧栏内点击冒泡」，需要复核。

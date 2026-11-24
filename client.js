@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.12'
+    const VERSION = '0.6.13'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -622,6 +622,26 @@ window.__ModuleLoader__.load({
       return tray.leftStack
     }
 
+    // The sidebar column does not scroll on its own: the host lays it out with
+    // overflow:visible and simply clips at the window edge, so a stack taller than the
+    // space below it hides its last cards with no way to reach them (verified at
+    // 1280x560: last card bottom 567 in a 560px viewport, no scrollable ancestor).
+    // Cap the stack at the room that actually exists and let it scroll instead.
+    function syncLeftStackScroll() {
+      const el = tray.leftStack
+      if (!el || !el.parentNode) return false
+      const rect = el.getBoundingClientRect()
+      if (rect.top <= 0 && rect.height === 0) return false
+      const room = Math.max(0, Math.round(window.innerHeight - rect.top - 8))
+      const over = el.scrollHeight > room + 0.5
+      el.style.maxHeight = over ? room + 'px' : ''
+      el.style.overflowY = over ? 'auto' : ''
+      el.style.scrollbarWidth = over ? 'thin' : ''
+      if (over) el.setAttribute('data-panel-dock-left-scrolls', '')
+      else el.removeAttribute('data-panel-dock-left-scrolls')
+      return over
+    }
+
     // The sidebar half is only a placeholder: the tray moves the cell containers in.
     function LeftSlot() {
       const ref = React.useRef(null)
@@ -716,6 +736,7 @@ window.__ModuleLoader__.load({
         } else if (tray.leftStack && tray.leftStack.parentNode) {
           tray.leftStack.parentNode.removeChild(tray.leftStack)
         }
+        if (wantLeft.length) syncLeftStackScroll()
         const bandEl = band.current
         if (bandEl) {
           wantRight.forEach((id, index) => {
@@ -737,9 +758,12 @@ window.__ModuleLoader__.load({
         }
         measureStack.current = measure
         measure()
-        if (!el || typeof ResizeObserver === 'undefined') return undefined
-        const observer = new ResizeObserver(measure)
-        for (const kid of el.children) observer.observe(kid)
+        // The left stack is not covered by the band's own observer above.
+        syncLeftStackScroll()
+        if (typeof ResizeObserver === 'undefined') return () => { measureStack.current = null }
+        const observer = new ResizeObserver(() => { measure(); syncLeftStackScroll() })
+        if (el) for (const kid of el.children) observer.observe(kid)
+        if (tray.leftStack) observer.observe(tray.leftStack)
         return () => { observer.disconnect(); measureStack.current = null }
       }, [inBand, right.length, top])
 
