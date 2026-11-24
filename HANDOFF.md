@@ -193,6 +193,20 @@ Copy-Item dsh-panel-dock-<ver>.tgz "$env:USERPROFILE\.dsh\vendor\"
 - 绘制成本随视口面积走（2026-11-21 实测，running 态）：1936x996（1.9 Mpx）program 2239ms/8s = 25%、idle 72%；2575x1407 dSF1.5（8.1 Mpx）program 4391ms/8s = 49%、idle 49%。JS 始终约 1%，rAF 回调 0。用户真实窗口 3862x2110 设备像素（dpi 144），renderer 满核是 native 光栅/合成成本，不是插件 JS。
 - 暂停状态点动画的 A/B（同一 8.1 Mpx 视口、同一 running 会话，2026-11-21）：动画在跑时 program 4391ms/8s（49%）、idle 49%；全部暂停后 program 926ms/8s（10%）、idle 88%。两端 JS 都约 1%。结论：renderer 满核来自持续动画引发的大面积 native 重光栅，与插件 JS 无关；每个 running 会话的转圈点（spin+dash 两个无限动画）是最小可复现触发源，数量随 running 会话数线性增长。
 
+## 8.3 卡片全消失的两种成因（2026-11-22 / 11-24 实测）
+
+**① 运行期崩溃（0.6.4，已修）**：`top` 那行引用了尚未初始化的 `plan`（TDZ），每次渲染抛 `ReferenceError`；槽位密封层把整块渲染成 null，于是**一张卡崩 → 所有卡消失**。0.6.5 修 TDZ；0.6.6 再加一层：托盘崩了就退回旧的左右宿主（卡片最多重挂一次，不会再整块空）。
+
+**② 插件被移出 client 图（0.6.6，环境问题）**：设置里「关掉再打开」会把插件从 `profiles/<p>/package.json` 的 `dsh.profile.bundles` 移除，**但启用时不会自动加回**。后果是 `dependencies` 里还在、`node_modules` 里还在，而 client 半根本不进 web 包 —— 判据是 `window.__dshPanelDock === undefined` 且 `/plugins/??` 合并包里搜不到 `dsh-panel-dock`。
+
+排查顺序（每次只验一个判据）：
+1. `window.__dshPanelDock.version` 是否有值 → 无值说明 client 没加载，**不要**再查几何；
+2. 页面资源里 `/plugins/??...` 是否含 `dsh-panel-dock`；
+3. `profiles/<p>/package.json` 的 `dsh.profile.bundles` 是否含它；
+4. `cordis.patch.yml` 是否有 `- id: panel-dock / name: dsh-panel-dock / disabled: false`。
+
+修法（两步，都要）：bundles 加回 + patch 加行，然后在 设置→插件 里重新启用（热应用）。只做 patch 行不够——client 集合由 bundles 决定；只改 bundles 也不一定热生效。
+
 ## 9. 消费者现状
 
 | 插件 | 版本 | 说明 |
