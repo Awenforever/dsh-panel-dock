@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.7'
+    const VERSION = '0.6.12'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -232,10 +232,17 @@ window.__ModuleLoader__.load({
       let areaRight = null
       let areaLeft = null
       let railInfo = null
+      let tabsSeen = false
+      let pageRight = null
       let pageTop = 0
       try {
-        const handle = [...document.querySelectorAll('[class*="widthHandle"]')]
-          .find((el) => el.getAttribute('data-side') === 'right')
+        // Views such as 轨迹/看板 keep the splitter in the DOM at 0x0 while it is not
+        // shown. Measuring it yields `left:0/right:0`, which used to drag the band to the
+        // top-left corner. Only a splitter with real area is an anchor.
+        const handles = [...document.querySelectorAll('[class*="widthHandle"]')]
+          .filter((el) => el.getAttribute('data-side') === 'right')
+          .filter((el) => { const r = box(el); return r.width > 0 && r.height > 0 })
+        const handle = handles[0]
         if (handle) {
           handleRight = Math.round(box(handle).right)
           // The splitter is the only way to widen the conversation back: a squeezed
@@ -248,6 +255,7 @@ window.__ModuleLoader__.load({
         // conversation can leave only a few pixels, so the tolerance has to stay small.
         const railMarks = [...document.querySelectorAll('button[aria-label]')]
           .filter((el) => /turnNavigation|轮次|跳转/i.test(el.getAttribute('aria-label') || ''))
+          .filter((el) => { const r = box(el); return r.width > 0 && r.height > 0 })
           .map((el) => ({ left: Math.round(box(el).left), right: Math.round(box(el).right) }))
           // Everything to the right of the handle belongs to the rail side; a squeezed
           // band can leave the rail a single pixel right of the handle.
@@ -258,8 +266,21 @@ window.__ModuleLoader__.load({
         if (pageTabs) {
           const pr = box(pageTabs)
           if (pr.width > 0) pageTop = Math.round(pr.bottom) + GAP
+          // An arbitrary main-area page decides its own content width. Climb from its tab
+          // strip to the first ancestor that no longer spans the window: that edge is the
+          // page's content boundary, and the gutter right of it is where the band belongs.
+          let node = pageTabs.parentElement
+          while (node && node !== document.body) {
+            const r = box(node)
+            if (r.width > 0 && r.height > 40 && r.right < window.innerWidth - 2) {
+              pageRight = Math.round(r.right)
+              break
+            }
+            node = node.parentElement
+          }
         }
         const tabs = document.querySelector('[data-conversation-tabs]')
+        tabsSeen = Boolean(tabs)
         if (tabs) {
           top = Math.round(box(tabs.parentElement || tabs).bottom) + GAP
           // The right sidebar (开始 / 终端 / 浏览器) owns the window's right side. The column
@@ -301,7 +322,7 @@ window.__ModuleLoader__.load({
           railRight = railMemory.railRight
         }
       } catch {}
-      return { left, right, top, handleLeft, handleRight, railRight, areaRight, areaLeft, pageTop }
+      return { left, right, top, handleLeft, handleRight, railRight, areaRight, areaLeft, pageTop, tabsSeen, pageRight }
     }
 
     function sameAnchors(a, b) {
@@ -337,8 +358,11 @@ window.__ModuleLoader__.load({
       }
       const columns = groups.filter((g) => g.count >= 4).sort((a, b) => (b.count - a.count) || (a.left - b.left))
       if (columns.length) return columns[0]
-      const left = Math.min(...marks.map((m) => m.left))
-      return { left, right: Math.max(...marks.filter((m) => Math.abs(m.left - left) <= 2).map((m) => m.right)) }
+      // A short conversation has few marks, but they still share one x. A *single* mark is
+      // usually an unrelated "跳转" button floating in the view (轨迹/看板 do that): treating
+      // it as the rail put the band at x≈6. Require at least two marks in one column.
+      const short = groups.filter((g) => g.count >= 2).sort((a, b) => (b.count - a.count) || (a.left - b.left))
+      return short.length ? short[0] : null
     }
 
     // Where right-side cards can live: the gutter left of the turn rail, the gutter right
@@ -354,6 +378,31 @@ window.__ModuleLoader__.load({
 
     // `required` is the widest minimum any right-side card declared: the band is one
     // column, so it has to satisfy the most demanding card in it.
+    // Kept so a main-area page shows the card at the same width it had beside the
+    // conversation: dropping to `required` there made the card visibly jump narrower.
+    let lastPlannedWidth = 0
+
+    // A main-area page (Memory, settings, a plugin panel, 轨迹/看板) has no conversation
+    // column to measure, so the band is laid out against the page's own content boundary:
+    // sit in the gutter right of the content when it is wide enough, otherwise take only
+    // the minimum width so as little content as possible is covered.
+    function pagePlan(anchors, required, top) {
+      const vw = typeof window === 'undefined' ? 0 : window.innerWidth
+      const limit = Math.min(vw, anchors && anchors.areaRight ? anchors.areaRight : vw) - GAP
+      const desired = Math.min(MAX_PANEL_WIDTH, Math.max(required, lastPlannedWidth || required))
+      const contentRight = anchors && anchors.pageRight ? anchors.pageRight : null
+      // Default to the width the band had beside the conversation, so switching between a
+      // page and a conversation does not visibly resize the card.
+      let width = desired
+      if (contentRight !== null) {
+        const gutter = vw - contentRight - GAP * 2
+        // Only a real gutter may shrink it; a full-width page has nowhere to put the band,
+        // so keep the familiar width and let the hover dim signal what it covers.
+        if (gutter >= required) width = Math.min(desired, gutter)
+      }
+      return { mode: 'page', pageTop: top, rightEdge: limit, width, limit }
+    }
+
     function planBand(anchors, required) {
       const vw = typeof window === 'undefined' ? 0 : window.innerWidth
       const areaEdge = Math.min(vw, anchors && anchors.areaRight ? anchors.areaRight : vw)
@@ -363,15 +412,22 @@ window.__ModuleLoader__.load({
       // surface to dock against, the band used to pin itself to the window top-right corner and
       // cover that page. Fall back to the sidebar stack instead.
       const hasSurface = Boolean(anchors) && (
-        (anchors.handleRight !== null && anchors.handleRight !== undefined)
+        anchors.tabsSeen === true
+        || (anchors.handleRight !== null && anchors.handleRight !== undefined)
         || (anchors.areaRight !== null && anchors.areaRight !== undefined)
         || (anchors.railRight !== null && anchors.railRight !== undefined)
       )
       if (!hasSurface) {
         const t = (anchors && anchors.pageTop) || 56
-        return { mode: 'page', pageTop: t, rightEdge: limit, width: Math.min(required, MAX_PANEL_WIDTH), limit }
+        return pagePlan(anchors, required, t)
       }
       const hasRail = Boolean(anchors) && anchors.railRight !== null && anchors.railRight !== undefined
+      // 轨迹 / 看板 / Codex are conversation views without a turn rail: the whitespace
+      // beside the transcript is not measurable the same way, so keep the band flush to
+      // the same right edge, at the conversation's own top, with the minimum width.
+      if (!hasRail && anchors !== null && anchors.tabsSeen === true) {
+        return pagePlan(anchors, required, anchors.top || 8)
+      }
       // A conversation without turns has no rail yet. That is not "no space": the column
       // simply runs to its own right edge, and that edge is the boundary the band must
       // respect. Treating the missing rail as a wall collapsed the band into the sidebar
@@ -381,11 +437,15 @@ window.__ModuleLoader__.load({
       const inner = anchors && anchors.left !== null ? innerRight - anchors.left : null
       // The whitespace is used where it exists.
       if (inner !== null && inner >= required) {
-        return { mode: 'inner', left: anchors.left, width: Math.min(inner, MAX_PANEL_WIDTH), limit }
+        const w = Math.min(inner, MAX_PANEL_WIDTH)
+        lastPlannedWidth = w
+        return { mode: 'inner', left: anchors.left, width: w, limit }
       }
       const outer = hasRail ? limit - (anchors.railRight + GAP) : null
       if (outer !== null && outer >= required) {
-        return { mode: 'outer', rightEdge: limit, width: Math.min(outer, MAX_PANEL_WIDTH), limit }
+        const w = Math.min(outer, MAX_PANEL_WIDTH)
+        lastPlannedWidth = w
+        return { mode: 'outer', rightEdge: limit, width: w, limit }
       }
       // No whitespace wide enough: take the minimum a card needs out of the transcript,
       // and only that much. The card sits flush with the conversation column so it takes
@@ -614,11 +674,6 @@ window.__ModuleLoader__.load({
         let observer = null
         if (typeof ResizeObserver !== 'undefined') {
           observer = new ResizeObserver(schedule)
-          const pageTabs = document.querySelector('[role="tablist"]')
-        if (pageTabs) {
-          const pr = box(pageTabs)
-          if (pr.width > 0) pageTop = Math.round(pr.bottom) + GAP
-        }
         const tabs = document.querySelector('[data-conversation-tabs]')
           const column = tabs && (tabs.parentElement || tabs)
           if (column) observer.observe(column)
@@ -918,8 +973,26 @@ window.__ModuleLoader__.load({
       return preferred === 'right' && placement.fallback ? 'left' : preferred
     }
 
+    // The band floats over the transcript, so a card that swallows the pointer is
+    // worse than one that merely looks solid. Hovering dims it to show what it covers;
+    // it stays hit-testable (click-through is self-contradictory in CSS: an element
+    // that ignores the pointer can never observe hover, so it would flicker).
+    const BAND_CSS = [
+      '[data-panel-dock-strip] [data-panel-dock-cell]{transition:opacity 120ms ease}',
+      '[data-panel-dock-strip] [data-panel-dock-cell]:hover{opacity:0.45}',
+      '@media (prefers-reduced-motion: reduce){[data-panel-dock-strip] [data-panel-dock-cell]{transition:none}}',
+    ].join('')
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-panel-dock: locale')
+      // Dock-level affordance: every card in the band dims on hover without opting in.
+      ctx.effect(() => {
+        if (typeof document === 'undefined') return undefined
+        const style = document.createElement('style')
+        style.setAttribute('data-dsh-panel-dock', 'band-hover')
+        style.textContent = BAND_CSS
+        document.head.appendChild(style)
+        return () => { try { style.remove() } catch {} }
+      }, 'dsh-panel-dock: band css')
       T = ctx.locale.bind(NS)
       // The tray keeps cards mounted when they change hosts; without portals the dock
       // falls back to rendering each host directly (0.3.x behaviour, cards remount).
