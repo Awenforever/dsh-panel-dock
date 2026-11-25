@@ -25,7 +25,7 @@ const dispose = dock.define({
   side: 'left',          // 'left' (default) | 'right'
   minWidth: 280,         // width below which your content stops being useful (default 280)
   version: '1.2.3',      // optional; shown by CardShell next to the title
-  frame: true,          // optional; the dock draws your rectangle (see below). Default false.
+  frame: false,         // optional; opt OUT of the dock-drawn rectangle. Default: dock draws it.
   component: MyPanel,    // required, a React component
 })
 ```
@@ -102,14 +102,15 @@ the conversation area's right edge — it never draws on that panel.
    `h('div', { ...rest, style: { ...style, /* yours */ } })`.
 2. Never position yourself: no `position: fixed`, no explicit width, no margins used to fight the
    dock. The dock owns placement.
-3. Your element is the visual rectangle **unless you opt into `frame: true`**. Without a frame the
-   dock adds no border, radius, padding or title bar — the card's own shell stays. If you want the
-   shared top bar, render `dock.CardShell` (below); it draws only the header row, never your body.
-   With `frame: true` the dock draws the rectangle (background `--dsw-specific-sidebar-fill`,
-   1px `--dsw-alias-border-l1`, radius 12, padding `10px 9px 8px`) and **flattens your root**:
-   `padding/margin/border/radius/background/box-shadow` are forced to zero on it. Declare
-   `frame: true` only if you are ready to give up your own shell — that is the point: three cards
-   then cannot end up in three different greys.
+3. **The dock owns the visible rectangle.** Since 0.8.0 every card is wrapped in
+   `[data-panel-dock-frame]`: background `--dsw-specific-sidebar-fill`, 1px
+   `--dsw-alias-border-l1`, radius 12, padding `10px 9px 8px`, shadow
+   `0 3px 12px rgba(0,0,0,.16)`. Your root is **flattened** — `padding/margin/border/
+   border-radius/background/box-shadow` are forced to zero on it — so draw content, not a box.
+   A card that genuinely needs its own box passes `frame: false` and keeps its shell (it will
+   then look different from the rest, which is the point of opting out).
+   If you want the shared top bar, render `dock.CardShell` (below); it draws only the header
+   row, never your body.
 4. Give it an **intrinsic height** in both hosts. The dock supplies width, flex reset and the 6px
    stack gap, nothing more. `order` decides stacking; `height` is accepted for compatibility but has
    no layout effect.

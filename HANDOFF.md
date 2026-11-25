@@ -1149,6 +1149,24 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 **新增事实：client.js 热更新在真实窗口里生效**。0.6.11 → 0.6.12 安装后未重启，`window.__dshPanelDock.version` 直接变成新值（`pnpm install` 替换 node_modules 后 HMR 重载模块）。所以插件改动不必每次让用户重启；「enable/disable 不能载入新 client」那条仍然成立，两者不矛盾。
 
 
+## 14. 0.8.x（2026-11-25）：底面归 dock 所有（用户定的不变量）
+
+**用户原话**：「我要 USTC 与 Memory 全部向 Codex 看齐，并且……以后各卡片的底色、阴影都统一，不再由各卡片自行其是。」
+
+| 卡片 | 改前 shadow | 改后 |
+|---|---|---|
+| USTC | `rgba(15,23,42,.06) 0 3px 12px` | `rgba(0,0,0,.16) 0 3px 12px` |
+| Memory（dock frame） | `rgba(0,0,0,.04) 0 1px 2px` | 同左 |
+| Codex | `rgba(0,0,0,.16) 0 3px 12px` | 不变（基准） |
+
+差的是**颜色**（偏移/模糊三张本来就是 `0 3px 12px`）。按 §11「阴影只允许按底色调颜色、不动偏移与模糊」，dock 只改颜色。
+
+**结构变化（0.8.0）**：`frame` 从 opt-in 改为**默认由 dock 接管**，卡片用 `frame: false` 退出。所有卡片统一为：底 `--dsw-specific-sidebar-fill`、1px `--dsw-alias-border-l1`、radius 12、padding `10px 9px 8px`、shadow `0 3px 12px rgba(0,0,0,.16)`，直接子元素被强制拉平。
+
+**0.8.1 踩到的坑**：registry 挂在 `window.__dshPanelDockRegistry`，**跨 client 热更新存活**；0.7.x 写入的记录里 `frame` 已经是 `false`（旧默认），改成默认 true 后两张卡仍自绘。修法：记录里增加 `frameDeclared`，无此字段的旧记录按新默认处理（`frameEnabled()`）。**教训：改默认值时必须考虑 window 上存活的旧记录。**
+
+实测（0.8.1，2560 窗口）：三张全部 `tag: frame`，`shadow rgba(0,0,0,.16) 0 3px 12px`、`radius 12px`、`bg rgb(249,250,251)`、`border 1px rgba(0,0,0,.04)` —— 完全一致。
+
 ## 13. 0.7.x（2026-11-25）：同侧牌堆、悬停开关、CardFrame、切会话不再跳动
 
 **① 切会话「先缩右再展开」已修**（`STICKY_PLAN_MS = 2500`）。

@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.7.8'
+    const VERSION = '0.8.1'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -149,11 +149,17 @@ window.__ModuleLoader__.load({
         ? String(definition.version)
         : null
       revisions.set(definition.id, revisionOf(definition.id) + 1)
-      // frame: the card asks the dock to own the visible rectangle (background, border,
-      // radius, padding). Opt-in only.
-      const frame = definition.frame === true
+      // frame: the dock owns the visible rectangle (background, border, radius, padding,
+      // shadow) for every card. Default ON since 0.8.0 -- three cards each painting their
+      // own surface is how three cards end up in three different greys and shadows.
+      // A card that genuinely needs its own box opts out with frame: false.
+      // frameDeclared separates "said false" from "defaulted false": the registry lives on
+      // window and survives client reloads, so records written by 0.7.x carry the old
+      // default (false) and would otherwise keep their own surface forever.
+      const frameDeclared = definition.frame === true || definition.frame === false
+      const frame = frameDeclared ? definition.frame === true : true
       // Keep the exact record so the disposer can tell "mine" from "a newer one's".
-      const stored = Object.assign({}, definition, { minWidth, version, frame })
+      const stored = Object.assign({}, definition, { minWidth, version, frame, frameDeclared })
       registry.set(definition.id, stored)
       emit()
       return () => {
@@ -172,6 +178,15 @@ window.__ModuleLoader__.load({
       return panels()
     }
 
+    // Effective surface ownership. Records written before 0.8.0 have no frameDeclared and
+    // a defaulted `frame: false`; they must follow the new default rather than keep it.
+    function frameEnabled(panel) {
+      if (!panel) return false
+      if (panel.frameDeclared === true) return panel.frame === true
+      if (panel.frameDeclared === false) return true
+      return true
+    }
+
     // Cards that opt in with `frame: true` hand the rectangle to the dock: one token set,
     // one radius, one border, so three cards cannot end up in three different greys. The
     // default stays off -- the dock must not repaint a card that draws itself.
@@ -184,7 +199,11 @@ window.__ModuleLoader__.load({
       border: '1px solid var(--dsw-alias-border-l1, rgba(0,0,0,0.08))',
       background: 'var(--dsw-specific-sidebar-fill, rgba(249,250,251,1))',
       color: 'var(--dsw-alias-label-primary, inherit)',
-      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+      // Surface is the dock's business as of 0.8.0: one background, one border, one
+      // radius, one shadow for every card. Values are the ones the cards themselves used
+      // to write (Codex Advisor's shadow, measured: 0 3px 12px rgba(0,0,0,.16)); they are
+      // the user's pick, so changing them needs the user, not a passing maintainer.
+      boxShadow: '0 3px 12px 0 rgba(0,0,0,0.16)',
     }
 
     // A panel owns its own rectangle: the dock passes sizing through `style` and the
@@ -206,7 +225,7 @@ window.__ModuleLoader__.load({
           pointerEvents: 'auto',
         },
       })
-      if (!panel.frame) return card
+      if (!frameEnabled(panel)) return card
       return h('div', {
         'data-panel-dock-frame': panel.id,
         style: Object.assign({}, FRAME_STYLE, { display: 'flex', flexDirection: 'column' }),
@@ -1366,9 +1385,9 @@ window.__ModuleLoader__.load({
           has: (id) => registry.has(id),
           panel: (id) => {
             const p = registry.get(id)
-            return p ? { id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version, frame: p.frame === true } : null
+            return p ? { id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version, frame: frameEnabled(p) } : null
           },
-          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version, frame: p.frame === true })),
+          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version, frame: frameEnabled(p) })),
           CardShell,
           getSide: (id) => sideOf(id, registry.has(id) ? registry.get(id).side : 'left'),
           setSide,
