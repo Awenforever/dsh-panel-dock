@@ -1164,6 +1164,12 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 **③ 悬停开关（affordance）**：列顶部 `-6px` 处一条 6px 的 `[data-panel-dock-deck-bar]`，悬停展开到 `26px`、`opacity .35→1`，黑色渐变 + 三个向下游动的 chevron（`pdDeckChevron`，`prefers-reduced-motion` 关闭动画）；点击切换牌堆/并列并持久化。**只有该侧 ≥2 张卡时才显示。**
 坑：条是 `position:absolute`，容器静态定位时会以视口为参照 → 实测跑到 `y=-6`（点不到）。修法：创建条时若 `getComputedStyle(container).position === "static"` 则设 `relative`。
 
+**0.7.7/0.7.8 三条用户反馈的修正**（都很具体，别再犯）：
+1. **「点了没反应」= 右带的条根本收不到点击**。带子是 `pointer-events:none`，条作为子元素**继承**了它；左栏栈没这个问题，所以我之前只在左栏验证过。修法：条上显式 `pointer-events:auto`。实测：右带点一次 `localStorage=1 / deck=true`，再点回 `0 / false`。
+2. **「常驻 / 顶部变高」**：原来 `top:-6px` 在列外、且常驻 `opacity .35`，看起来像给列加了高度。现在：`top:0`（压在列顶、不占布局）、静止 `opacity:0` 的 10px 透明感应区，悬停才显形。实测悬停前后 `bandTop`、`cardTop` 均为 121 —— **布局零变化**。
+3. **「太细 / 玻璃感」**：悬停时 32px 高、左右各外扩 4px，`backdrop-filter: blur(7px) saturate(1.15)` + `rgba(18,20,24,.72→.30)` 渐变 + 三个白色 chevron（`drop-shadow` 提对比）。第一版 `.46` 的黑在浅色卡上变灰、白箭头几乎看不见，加深后才读得出来。
+4. 牌堆开启时 chevron 转 90°（`rotate(-45deg)`）表示「拆回并列」。
+
 **④ CardFrame（`frame: true`，opt-in）**：dock 接管矩形——`--dsw-specific-sidebar-fill` 底、`1px --dsw-alias-border-l1`、radius 12、padding `10px 9px 8px`、`0 1px 2px rgba(0,0,0,.04)` 阴影（只按底色调颜色，符合 §11）。
 - 默认 **false**：dock 不得替卡片改配色（§11），只有卡片显式 opt-in 才算它同意。
 - dock 会**强制拉平**卡片直接子元素（`padding/margin/border/radius/background/box-shadow → 0`，带 `!important`）：`.card-root` 的规则与本规则同优先级且后落，不加 `!important` 会留下「框中框」（实测：frame 280×168 内套 `loci-card-root` 261×149，白底圆角）。

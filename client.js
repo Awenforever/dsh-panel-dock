@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.7.6'
+    const VERSION = '0.7.8'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -701,6 +701,8 @@ window.__ModuleLoader__.load({
       bar.setAttribute('data-panel-dock-deck-bar', '')
       bar.setAttribute('role', 'button')
       bar.setAttribute('tabindex', '-1')
+      bar.setAttribute('aria-label', '堆叠 / 并列')
+      bar.setAttribute('title', '堆叠 / 并列')
       bar.appendChild(document.createElement('i'))
       bar.appendChild(document.createElement('i'))
       bar.appendChild(document.createElement('i'))
@@ -804,6 +806,7 @@ window.__ModuleLoader__.load({
         deck.order[key] = null
         container.removeAttribute('data-panel-dock-deck')
         container.style.height = ''
+        bar.removeAttribute('data-panel-dock-deck-on')
         if (bar) {
           if (ids.length >= 2) bar.removeAttribute('data-panel-dock-hidden')
           else bar.setAttribute('data-panel-dock-hidden', '')
@@ -824,6 +827,7 @@ window.__ModuleLoader__.load({
         return
       }
       container.setAttribute('data-panel-dock-deck', '')
+      bar.setAttribute('data-panel-dock-deck-on', '')
       let front = deck.front[key]
       if (!front || ids.indexOf(front) < 0) front = ids[0]
       deck.front[key] = front
@@ -1292,15 +1296,35 @@ window.__ModuleLoader__.load({
       '[data-panel-dock-frame] > *{padding:0 !important;margin:0 !important;border:0 !important;',
       'border-radius:0 !important;background:transparent !important;box-shadow:none !important;}',
       // ---- affordance: the card edge drops into a gradient band ----
-      '[data-panel-dock-deck-bar]{position:absolute;left:0;right:0;top:-6px;height:6px;z-index:400;',
-      'display:flex;align-items:center;justify-content:center;gap:2px;box-sizing:border-box;',
-      'border-radius:6px;cursor:pointer;opacity:.35;transition:height 160ms ease,opacity 160ms ease;',
-      'background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,.18));}',
-      '[data-panel-dock-deck-bar]:hover{height:26px;opacity:1}',
-      '[data-panel-dock-deck-bar] > i{display:block;width:5px;height:5px;margin-top:-4px;',
-      'border-right:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(45deg);',
-      'opacity:.25;animation:pdDeckChevron 1.2s ease-in-out infinite}',
-      '[data-panel-dock-deck-bar]:hover > i{opacity:.9}',
+      // The affordance is a glass overlay, not a row: it takes no layout space, sits on
+      // the column's own top edge (not above it) and stays invisible until the pointer
+      // arrives -- a permanently visible bar read as "the column got taller".
+      // pointer-events:auto is essential: the band is pointer-events:none, and a child
+      // inherits that, so the strip was unclickable (reported as "click does nothing").
+      '[data-panel-dock-deck-bar]{position:absolute;left:-4px;right:-4px;top:0;height:10px;',
+      'z-index:400;box-sizing:border-box;pointer-events:auto;cursor:pointer;',
+      'display:flex;align-items:center;justify-content:center;gap:3px;',
+      'border-radius:0 0 10px 10px;border-bottom:1px solid transparent;',
+      'background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,0));',
+      'opacity:0;transition:height 170ms ease,opacity 140ms ease,background 170ms ease,',
+      'border-color 170ms ease;-webkit-backdrop-filter:blur(0px);backdrop-filter:blur(0px);}',
+      '[data-panel-dock-deck-bar]:hover,[data-panel-dock-deck-bar]:focus-visible{',
+      'height:32px;opacity:1;',
+      // Dark enough that white chevrons read on a light card, translucent enough to see
+      // the card edge through it -- measured on a light theme card: .46 over white gave
+      // a pale grey where the arrows disappeared.
+      'background:linear-gradient(180deg,rgba(18,20,24,.72),rgba(18,20,24,.30));',
+      'border-bottom-color:rgba(0,0,0,.18);',
+      '-webkit-backdrop-filter:blur(7px) saturate(1.15);backdrop-filter:blur(7px) saturate(1.15);}',
+      '[data-panel-dock-deck-bar] > i{display:block;width:7px;height:7px;margin-top:-6px;',
+      'border-right:1.8px solid #fff;border-bottom:1.8px solid #fff;transform:rotate(45deg);',
+      'opacity:0;filter:drop-shadow(0 1px 1px rgba(0,0,0,.45));',
+      'transition:opacity 140ms ease;animation:pdDeckChevron 1.2s ease-in-out infinite}',
+      '[data-panel-dock-deck-bar]:hover > i,[data-panel-dock-deck-bar]:focus-visible > i{opacity:.92}',
+      // Deck already on: the same gesture splits the stack back into rows, so point
+      // the chevrons at the rows instead of repeating "stack down".
+      '[data-panel-dock-deck-bar][data-panel-dock-deck-on] > i{transform:rotate(-45deg);margin-top:5px;margin-left:-3px}',
+      '@media (prefers-reduced-motion: reduce){[data-panel-dock-deck-bar] > i{animation:none}}',
       '[data-panel-dock-deck-bar] > i:nth-child(2){animation-delay:.14s}',
       '[data-panel-dock-deck-bar] > i:nth-child(3){animation-delay:.28s}',
       '@keyframes pdDeckChevron{0%{opacity:.15;transform:translateY(-2px) rotate(45deg)}',
@@ -1309,8 +1333,7 @@ window.__ModuleLoader__.load({
       '@media (prefers-reduced-motion: reduce){',
       '[data-panel-dock-strip] [data-panel-dock-cell]{transition:none}',
       '[data-panel-dock-deck]{transition:none}',
-      '[data-panel-dock-deck] > [data-panel-dock-cell]{transition:none}',
-      '[data-panel-dock-deck-bar] > i{animation:none}}',
+      '[data-panel-dock-deck] > [data-panel-dock-cell]{transition:none}}',
     ].join('')
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-panel-dock: locale')
