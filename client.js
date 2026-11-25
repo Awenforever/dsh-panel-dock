@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.6.13'
+    const VERSION = '0.7.6'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -149,8 +149,11 @@ window.__ModuleLoader__.load({
         ? String(definition.version)
         : null
       revisions.set(definition.id, revisionOf(definition.id) + 1)
+      // frame: the card asks the dock to own the visible rectangle (background, border,
+      // radius, padding). Opt-in only.
+      const frame = definition.frame === true
       // Keep the exact record so the disposer can tell "mine" from "a newer one's".
-      const stored = Object.assign({}, definition, { minWidth, version })
+      const stored = Object.assign({}, definition, { minWidth, version, frame })
       registry.set(definition.id, stored)
       emit()
       return () => {
@@ -169,10 +172,25 @@ window.__ModuleLoader__.load({
       return panels()
     }
 
+    // Cards that opt in with `frame: true` hand the rectangle to the dock: one token set,
+    // one radius, one border, so three cards cannot end up in three different greys. The
+    // default stays off -- the dock must not repaint a card that draws itself.
+    const FRAME_STYLE = {
+      boxSizing: 'border-box',
+      width: '100%',
+      minWidth: 0,
+      padding: '10px 9px 8px',
+      borderRadius: 12,
+      border: '1px solid var(--dsw-alias-border-l1, rgba(0,0,0,0.08))',
+      background: 'var(--dsw-specific-sidebar-fill, rgba(249,250,251,1))',
+      color: 'var(--dsw-alias-label-primary, inherit)',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+    }
+
     // A panel owns its own rectangle: the dock passes sizing through `style` and the
     // component must spread it onto its single root element.
     function renderPanel(panel) {
-      return h(panel.component, {
+      const card = h(panel.component, {
         key: panel.id,
         active: true,
         'data-panel-dock-item': panel.id,
@@ -188,6 +206,11 @@ window.__ModuleLoader__.load({
           pointerEvents: 'auto',
         },
       })
+      if (!panel.frame) return card
+      return h('div', {
+        'data-panel-dock-frame': panel.id,
+        style: Object.assign({}, FRAME_STYLE, { display: 'flex', flexDirection: 'column' }),
+      }, card)
     }
 
     // Left panels live in the sidebar footer, in registration order.
@@ -381,6 +404,13 @@ window.__ModuleLoader__.load({
     // Kept so a main-area page shows the card at the same width it had beside the
     // conversation: dropping to `required` there made the card visibly jump narrower.
     let lastPlannedWidth = 0
+    // Switching conversations unmounts the turn rail for a moment ("载入历史…"). Treating
+    // that as "no conversation surface" flung the band to the window edge and pulled it
+    // back once loading finished -- the shrink-then-expand the user sees. Keep the last
+    // anchored plan through that gap instead of re-deciding on a half-built page.
+    const STICKY_PLAN_MS = 2500
+    let lastAnchoredPlan = null
+    let lastAnchoredAt = 0
 
     // A main-area page (Memory, settings, a plugin panel, 轨迹/看板) has no conversation
     // column to measure, so the band is laid out against the page's own content boundary:
@@ -422,10 +452,13 @@ window.__ModuleLoader__.load({
         return pagePlan(anchors, required, t)
       }
       const hasRail = Boolean(anchors) && anchors.railRight !== null && anchors.railRight !== undefined
-      // 轨迹 / 看板 / Codex are conversation views without a turn rail: the whitespace
-      // beside the transcript is not measurable the same way, so keep the band flush to
-      // the same right edge, at the conversation's own top, with the minimum width.
+      // 轨迹 / 看板 / Codex are conversation views without a turn rail: they keep the band
+      // flush to the right edge. But a *conversation* also loses its rail for a moment
+      // while history loads, and that is not a view change -- reuse the anchored plan for
+      // a short window so the band does not jump to the edge and back.
       if (!hasRail && anchors !== null && anchors.tabsSeen === true) {
+        const now = Date.now()
+        if (lastAnchoredPlan && now - lastAnchoredAt < STICKY_PLAN_MS) return lastAnchoredPlan
         return pagePlan(anchors, required, anchors.top || 8)
       }
       // A conversation without turns has no rail yet. That is not "no space": the column
@@ -436,16 +469,18 @@ window.__ModuleLoader__.load({
       const innerRight = anchors && anchors.right !== null ? anchors.right : limit
       const inner = anchors && anchors.left !== null ? innerRight - anchors.left : null
       // The whitespace is used where it exists.
+      const remember = (plan) => {
+        lastAnchoredPlan = plan
+        lastAnchoredAt = Date.now()
+        if (plan.width) lastPlannedWidth = plan.width
+        return plan
+      }
       if (inner !== null && inner >= required) {
-        const w = Math.min(inner, MAX_PANEL_WIDTH)
-        lastPlannedWidth = w
-        return { mode: 'inner', left: anchors.left, width: w, limit }
+        return remember({ mode: 'inner', left: anchors.left, width: Math.min(inner, MAX_PANEL_WIDTH), limit })
       }
       const outer = hasRail ? limit - (anchors.railRight + GAP) : null
       if (outer !== null && outer >= required) {
-        const w = Math.min(outer, MAX_PANEL_WIDTH)
-        lastPlannedWidth = w
-        return { mode: 'outer', rightEdge: limit, width: w, limit }
+        return remember({ mode: 'outer', rightEdge: limit, width: Math.min(outer, MAX_PANEL_WIDTH), limit })
       }
       // No whitespace wide enough: take the minimum a card needs out of the transcript,
       // and only that much. The card sits flush with the conversation column so it takes
@@ -456,7 +491,7 @@ window.__ModuleLoader__.load({
         : Math.max(1, areaEdge)
       // The card may cover at most half of the conversation column.
       if (required > column * MAX_COVER_RATIO) return { mode: 'fallback', width: 0, limit }
-      return { mode: 'intrude', rightEdge, width: required, limit }
+      return remember({ mode: 'intrude', rightEdge, width: required, limit })
     }
 
     function RightHost() {
@@ -609,6 +644,226 @@ window.__ModuleLoader__.load({
       }
     }
 
+    // ---- deck: same-side cards as a stack (one full card + 24px peek strips) ----
+    // Column behaviour up to 0.6.13 is a plain list. A deck trades height for order:
+    // every rear card shows only its top strip and the wheel shuffles the front one.
+    const DECK_PEEK = 24
+    const DECK_KEY = 'dsh.panel-dock.deck'
+    const deck = { on: null, front: { band: null, left: null }, order: { band: null, left: null }, resync: null, wheelAt: 0 }
+
+    function deckOn() {
+      if (deck.on === null) {
+        try { deck.on = localStorage.getItem(DECK_KEY) === '1' } catch { deck.on = false }
+      }
+      return deck.on
+    }
+
+    function setDeckMode(next) {
+      if (deckOn() === next) return
+      deck.on = next
+      try { localStorage.setItem(DECK_KEY, next ? '1' : '0') } catch {}
+      if (deck.resync) deck.resync()
+      if (tray.poke) tray.poke()
+    }
+
+    function deckKeyOf(container) {
+      return container && container.hasAttribute('data-panel-dock-strip') ? 'band' : 'left'
+    }
+
+    function cellAt(container, index) {
+      const cells = []
+      for (const kid of container.children) {
+        if (kid.hasAttribute && kid.hasAttribute('data-panel-dock-cell')) cells.push(kid)
+      }
+      return cells[index] || null
+    }
+
+    function deckBarOf(container) {
+      for (const kid of container.children) {
+        if (kid.hasAttribute && kid.hasAttribute('data-panel-dock-deck-bar')) return kid
+      }
+      return null
+    }
+
+    // The affordance is the card edge itself: a narrow strip that drops into a gradient
+    // band with three travelling chevrons when the pointer arrives. It is absolutely
+    // positioned so it never takes part in the column's flow.
+    function ensureDeckBar(container) {
+      let bar = deckBarOf(container)
+      if (bar) return bar
+      // The strip is positioned against this column: without a positioning context it
+      // resolved against the viewport and sat at y=-6, off screen (measured).
+      if (typeof getComputedStyle === 'function') {
+        const position = getComputedStyle(container).position
+        if (position === 'static') container.style.position = 'relative'
+      }
+      bar = document.createElement('div')
+      bar.setAttribute('data-panel-dock-deck-bar', '')
+      bar.setAttribute('role', 'button')
+      bar.setAttribute('tabindex', '-1')
+      bar.appendChild(document.createElement('i'))
+      bar.appendChild(document.createElement('i'))
+      bar.appendChild(document.createElement('i'))
+      bar.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        setDeckMode(!deckOn())
+      })
+      container.appendChild(bar)
+      return bar
+    }
+
+    function rotateDeck(container, step) {
+      const key = deckKeyOf(container)
+      const order = deck.order[key]
+      if (!order || order.length < 2) return
+      const at = order.indexOf(deck.front[key])
+      const from = at < 0 ? 0 : at
+      const next = (from + step + order.length) % order.length
+      deck.front[key] = order[next]
+      if (deck.resync) deck.resync()
+    }
+
+    function wireDeckInput(container) {
+      if (!container || container.__pdDeckWired) return
+      container.__pdDeckWired = true
+      container.addEventListener('wheel', (event) => {
+        if (!deckOn()) return
+        const key = deckKeyOf(container)
+        const order = deck.order[key]
+        if (!order || order.length < 2) return
+        event.preventDefault()
+        event.stopPropagation()
+        const now = Date.now()
+        if (now - deck.wheelAt < 130) return
+        deck.wheelAt = now
+        rotateDeck(container, event.deltaY > 0 ? 1 : -1)
+      }, { passive: false })
+      // A click on a rear card's strip promotes that card instead of reaching the card.
+      container.addEventListener('pointerdown', (event) => {
+        if (!deckOn()) return
+        const key = deckKeyOf(container)
+        const order = deck.order[key]
+        if (!order || order.length < 2) return
+        const box = container.getBoundingClientRect()
+        const y = event.clientY - box.top
+        const slot = Math.floor(y / DECK_PEEK)
+        if (slot < 0 || slot >= order.length - 1) return
+        const target = order[order.length - 1 - slot]
+        event.preventDefault()
+        event.stopPropagation()
+        deck.front[key] = target
+        if (deck.resync) deck.resync()
+      }, true)
+    }
+
+    // Cards reach their real height asynchronously (data arrives after mount) and never
+    // re-render the dock, so the deck height has to follow the front card's size.
+    function refreshDeckHeight(container) {
+      if (!container || !container.hasAttribute('data-panel-dock-deck')) return
+      const key = deckKeyOf(container)
+      const order = deck.order[key]
+      if (!order || !order.length) return
+      const front = tray.cells.get(order[0])
+      if (!front) return
+      const frontHeight = Math.round(front.getBoundingClientRect().height)
+      if (!frontHeight) return
+      const total = frontHeight + (order.length - 1) * DECK_PEEK
+      const box = container.getBoundingClientRect()
+      const room = box.top > 0 ? Math.max(0, Math.round(window.innerHeight - box.top - 8)) : 0
+      const capped = room > 0 && total > room
+      const next = (capped ? room : total) + 'px'
+      if (container.style.height !== next) container.style.height = next
+      const overflow = capped ? 'auto' : ''
+      if (container.style.overflowY !== overflow) container.style.overflowY = overflow
+    }
+
+    function watchDeckCells(container) {
+      if (!container || typeof ResizeObserver === 'undefined') return
+      if (!container.__pdDeckObserver) {
+        container.__pdDeckObserver = new ResizeObserver(() => refreshDeckHeight(container))
+      }
+      const observer = container.__pdDeckObserver
+      const seen = container.__pdDeckSeen || new Set()
+      for (const kid of container.children) {
+        if (!kid.hasAttribute || !kid.hasAttribute('data-panel-dock-cell')) continue
+        if (seen.has(kid)) continue
+        seen.add(kid)
+        observer.observe(kid)
+      }
+      container.__pdDeckSeen = seen
+    }
+
+    function syncDeck(container, ids, active) {
+      if (!container) return
+      wireDeckInput(container)
+      const key = deckKeyOf(container)
+      const usable = active && deckOn() && ids.length >= 2
+      const bar = ensureDeckBar(container)
+      if (!usable) {
+        deck.order[key] = null
+        container.removeAttribute('data-panel-dock-deck')
+        container.style.height = ''
+        if (bar) {
+          if (ids.length >= 2) bar.removeAttribute('data-panel-dock-hidden')
+          else bar.setAttribute('data-panel-dock-hidden', '')
+        }
+        container.style.overflowY = ''
+        container.style.flex = ''
+        for (const id of ids) {
+          const el = tray.cells.get(id)
+          if (!el) continue
+          el.style.position = ''
+          el.style.left = ''
+          el.style.right = ''
+          el.style.top = ''
+          el.style.transform = ''
+          el.style.zIndex = ''
+          el.style.clipPath = ''
+        }
+        return
+      }
+      container.setAttribute('data-panel-dock-deck', '')
+      let front = deck.front[key]
+      if (!front || ids.indexOf(front) < 0) front = ids[0]
+      deck.front[key] = front
+      const start = ids.indexOf(front)
+      const order = ids.slice(start).concat(ids.slice(0, start))
+      deck.order[key] = order
+      let frontHeight = 0
+      order.forEach((id, position) => {
+        const el = tray.cells.get(id)
+        if (!el) return
+        el.style.position = 'absolute'
+        el.style.left = '0'
+        el.style.right = '0'
+        el.style.top = '0'
+        el.style.zIndex = String(200 - position)
+        el.style.transform = 'translateY(' + ((order.length - 1 - position) * DECK_PEEK) + 'px)'
+        // A rear card is only its strip: without clipping, a tall rear card would show
+        // its bottom edge below a shorter front card (measured: 222px rear under a 170px
+        // front in a 218px column).
+        el.style.clipPath = position === 0
+          ? ''
+          : 'inset(0px 0px calc(100% - ' + DECK_PEEK + 'px) 0px)'
+        if (position === 0) frontHeight = Math.round(el.getBoundingClientRect().height)
+      })
+      const total = frontHeight + (order.length - 1) * DECK_PEEK
+      deck.frontHeights = deck.frontHeights || {}
+      deck.frontHeights[key] = frontHeight
+      const box = container.getBoundingClientRect()
+      const room = box.top > 0 ? Math.max(0, Math.round(window.innerHeight - box.top - 8)) : 0
+      // A deck taller than the column still has to be reachable; cap and scroll rather
+      // than push the rear strips off the top of the screen.
+      const capped = room > 0 && total > room
+      container.style.height = total > 0 ? (capped ? room : total) + 'px' : ''
+      container.style.overflowY = capped ? 'auto' : ''
+      watchDeckCells(container)
+      // The sidebar stack is a flex child sized to 100%; with an explicit height it has
+      // to opt out or the host's basis wins.
+      container.style.flex = container.hasAttribute('data-panel-dock-left') ? '0 0 auto' : ''
+    }
+
     function leftStackNode() {
       if (!tray.leftStack) {
         const el = document.createElement('div')
@@ -660,6 +915,7 @@ window.__ModuleLoader__.load({
       const [, bump] = React.useState(0)
       const band = React.useRef(null)
       const measureStack = React.useRef(null)
+      const lastPlacement = React.useRef({ left: [], right: [], inBand: false })
 
       React.useEffect(() => {
         tray.poke = () => bump((n) => n + 1)
@@ -714,6 +970,17 @@ window.__ModuleLoader__.load({
       const inBand = plan.mode !== 'fallback' && right.length > 0
       React.useEffect(() => { setFallback(plan.mode === 'fallback') }, [plan.mode])
 
+      // The wheel/click path must not wait for a React render: it re-applies the deck
+      // straight from the last placement it knows about.
+      React.useEffect(() => {
+        deck.resync = () => {
+          const last = lastPlacement.current
+          if (tray.leftStack) syncDeck(tray.leftStack, last.left, true)
+          if (band.current) syncDeck(band.current, last.right, last.inBand)
+        }
+        return () => { deck.resync = null }
+      }, [])
+
       // Placement: every frame after render, put each cell into the stack that owns it.
       React.useEffect(() => {
         const alive = new Set(all.map((panel) => panel.id))
@@ -730,21 +997,26 @@ window.__ModuleLoader__.load({
           if (stack.parentNode !== tray.leftSlot) tray.leftSlot.appendChild(stack)
           wantLeft.forEach((id, index) => {
             const el = cellOf(id)
-            const at = stack.children[index]
-            if (at !== el) stack.insertBefore(el, at || null)
+            const at = cellAt(stack, index)
+            if (at !== el) stack.insertBefore(el, at || deckBarOf(stack) || null)
           })
         } else if (tray.leftStack && tray.leftStack.parentNode) {
           tray.leftStack.parentNode.removeChild(tray.leftStack)
         }
-        if (wantLeft.length) syncLeftStackScroll()
         const bandEl = band.current
         if (bandEl) {
           wantRight.forEach((id, index) => {
             const el = cellOf(id)
-            const at = bandEl.children[index]
-            if (at !== el) bandEl.insertBefore(el, at || null)
+            const at = cellAt(bandEl, index)
+            if (at !== el) bandEl.insertBefore(el, at || deckBarOf(bandEl) || null)
           })
         }
+        // Deck last: it needs the cells already in their containers to measure the front
+        // card and to compute the strips.
+        lastPlacement.current = { left: wantLeft, right: wantRight, inBand }
+        if (tray.leftStack) syncDeck(tray.leftStack, wantLeft, true)
+        if (bandEl) syncDeck(bandEl, wantRight, inBand)
+        if (wantLeft.length && !deckOn()) syncLeftStackScroll()
       })
 
       // The stack scrolls only when the cards outgrow the column (see SHADOW_GUTTER).
@@ -759,7 +1031,7 @@ window.__ModuleLoader__.load({
         measureStack.current = measure
         measure()
         // The left stack is not covered by the band's own observer above.
-        syncLeftStackScroll()
+        if (!deckOn()) syncLeftStackScroll()
         if (typeof ResizeObserver === 'undefined') return () => { measureStack.current = null }
         const observer = new ResizeObserver(() => { measure(); syncLeftStackScroll() })
         if (el) for (const kid of el.children) observer.observe(kid)
@@ -1004,7 +1276,41 @@ window.__ModuleLoader__.load({
     const BAND_CSS = [
       '[data-panel-dock-strip] [data-panel-dock-cell]{transition:opacity 120ms ease}',
       '[data-panel-dock-strip] [data-panel-dock-cell]:hover{opacity:0.45}',
-      '@media (prefers-reduced-motion: reduce){[data-panel-dock-strip] [data-panel-dock-cell]{transition:none}}',
+      // ---- deck ----
+      '[data-panel-dock-deck]{position:relative;transition:height 200ms cubic-bezier(.2,.8,.2,1)}',
+      '[data-panel-dock-deck] > [data-panel-dock-cell]{position:absolute;left:0;right:0;top:0;',
+      'transition:transform 200ms cubic-bezier(.2,.8,.2,1),opacity 160ms ease}',
+      // Rear cards are only strips: keep them clickable but not visually loud.
+      '[data-panel-dock-deck] > [data-panel-dock-cell]:hover{opacity:1}',
+      '[data-panel-dock-deck-bar][data-panel-dock-hidden]{display:none}',
+      // frame:true means the dock owns the rectangle, so the card body must not paint a
+      // second one. Cards get this for free -- a card that keeps its own border shows a
+      // box inside a box (seen live: loci drew 12px radius + white fill inside the frame).
+      // !important is deliberate and scoped: the card's own `.card-root` rule has equal
+      // specificity and lands later in the cascade, so without it the frame keeps a box
+      // inside a box (verified: padding/border/radius survived the plain rule).
+      '[data-panel-dock-frame] > *{padding:0 !important;margin:0 !important;border:0 !important;',
+      'border-radius:0 !important;background:transparent !important;box-shadow:none !important;}',
+      // ---- affordance: the card edge drops into a gradient band ----
+      '[data-panel-dock-deck-bar]{position:absolute;left:0;right:0;top:-6px;height:6px;z-index:400;',
+      'display:flex;align-items:center;justify-content:center;gap:2px;box-sizing:border-box;',
+      'border-radius:6px;cursor:pointer;opacity:.35;transition:height 160ms ease,opacity 160ms ease;',
+      'background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,.18));}',
+      '[data-panel-dock-deck-bar]:hover{height:26px;opacity:1}',
+      '[data-panel-dock-deck-bar] > i{display:block;width:5px;height:5px;margin-top:-4px;',
+      'border-right:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(45deg);',
+      'opacity:.25;animation:pdDeckChevron 1.2s ease-in-out infinite}',
+      '[data-panel-dock-deck-bar]:hover > i{opacity:.9}',
+      '[data-panel-dock-deck-bar] > i:nth-child(2){animation-delay:.14s}',
+      '[data-panel-dock-deck-bar] > i:nth-child(3){animation-delay:.28s}',
+      '@keyframes pdDeckChevron{0%{opacity:.15;transform:translateY(-2px) rotate(45deg)}',
+      '50%{opacity:.95;transform:translateY(2px) rotate(45deg)}',
+      '100%{opacity:.15;transform:translateY(-2px) rotate(45deg)}}',
+      '@media (prefers-reduced-motion: reduce){',
+      '[data-panel-dock-strip] [data-panel-dock-cell]{transition:none}',
+      '[data-panel-dock-deck]{transition:none}',
+      '[data-panel-dock-deck] > [data-panel-dock-cell]{transition:none}',
+      '[data-panel-dock-deck-bar] > i{animation:none}}',
     ].join('')
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-panel-dock: locale')
@@ -1037,9 +1343,9 @@ window.__ModuleLoader__.load({
           has: (id) => registry.has(id),
           panel: (id) => {
             const p = registry.get(id)
-            return p ? { id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version } : null
+            return p ? { id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version, frame: p.frame === true } : null
           },
-          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version })),
+          panels: () => panels().map((p) => ({ id: p.id, title: p.title, order: p.order, side: sideOf(p.id, p.side), effective: effectiveSide(p.id), minWidth: p.minWidth, version: p.version, frame: p.frame === true })),
           CardShell,
           getSide: (id) => sideOf(id, registry.has(id) ? registry.get(id).side : 'left'),
           setSide,

@@ -1148,6 +1148,29 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 
 **新增事实：client.js 热更新在真实窗口里生效**。0.6.11 → 0.6.12 安装后未重启，`window.__dshPanelDock.version` 直接变成新值（`pnpm install` 替换 node_modules 后 HMR 重载模块）。所以插件改动不必每次让用户重启；「enable/disable 不能载入新 client」那条仍然成立，两者不矛盾。
 
+
+## 13. 0.7.x（2026-11-25）：同侧牌堆、悬停开关、CardFrame、切会话不再跳动
+
+**① 切会话「先缩右再展开」已修**（`STICKY_PLAN_MS = 2500`）。
+实测（每 100ms 采样）：载入史时轮次轨从 45 个变 0，旧逻辑把「有页签无轮次轨」判成页面模式 → 带子 `x=2074`；载入完才回 `inner` 的 `1886`。修法：`lastAnchoredPlan` 记住上次 `inner/outer/intrude` 计划，2.5 秒内复用它。验证：切一次会话，带子 x 全程只有 `[1266]` 一个值（2560 宽窗口）。
+
+**② 牌堆（deck）**：`localStorage["dsh.panel-dock.deck"] = "1"` 打开；两侧都支持。
+- 几何：前卡整张可见，其余各露 **24px** 细条叠在上方；容器高 = 前卡高 + 24×(N-1)，`transition: height 200ms`。
+- 交互：容器内**滚轮**换前卡（`deltaY>0` 前进/`<0` 后退，130ms 节流）；**点细条**直接把那张提到最前。
+- 平滑：位移只用 `transform: translateY()`（合成层），高度只变一次；后卡用 `clip-path: inset(0 0 calc(100% - 24px) 0)` 剪成细条——不剪的话后排高卡会从前卡底部露出（实测 222px 后排 在 170px 前卡下溢出 28px）。
+- 高度跟随：`ResizeObserver` 观察所有 cell，前卡长高时容器高度重算（首次测量会偏小：loci 卡 128→170，导致前卡被自己的容器裁掉）。
+- 实测（1440×900）：滚轮下 → 前卡 `loci-memory`→`ustc-quota`、容器 `218px`→`270px`；滚轮上复原；点第二条细条 → `ustc-quota` 到前。右带同样工作（3 张、`h=218px`）。
+
+**③ 悬停开关（affordance）**：列顶部 `-6px` 处一条 6px 的 `[data-panel-dock-deck-bar]`，悬停展开到 `26px`、`opacity .35→1`，黑色渐变 + 三个向下游动的 chevron（`pdDeckChevron`，`prefers-reduced-motion` 关闭动画）；点击切换牌堆/并列并持久化。**只有该侧 ≥2 张卡时才显示。**
+坑：条是 `position:absolute`，容器静态定位时会以视口为参照 → 实测跑到 `y=-6`（点不到）。修法：创建条时若 `getComputedStyle(container).position === "static"` 则设 `relative`。
+
+**④ CardFrame（`frame: true`，opt-in）**：dock 接管矩形——`--dsw-specific-sidebar-fill` 底、`1px --dsw-alias-border-l1`、radius 12、padding `10px 9px 8px`、`0 1px 2px rgba(0,0,0,.04)` 阴影（只按底色调颜色，符合 §11）。
+- 默认 **false**：dock 不得替卡片改配色（§11），只有卡片显式 opt-in 才算它同意。
+- dock 会**强制拉平**卡片直接子元素（`padding/margin/border/radius/background/box-shadow → 0`，带 `!important`）：`.card-root` 的规则与本规则同优先级且后落，不加 `!important` 会留下「框中框」（实测：frame 280×168 内套 `loci-card-root` 261×149，白底圆角）。
+- 实测：`data-panel-dock-frame` 280×149、`padding 10px 9px 8px`、`radius 12px`、`bg rgb(249,250,251)`，子元素全零 —— 与 USTC 卡同色。
+
+**⑤ 与 dsh-loci 的契约**（他们已 `frame: true`）：`[data-panel-dock-frame]` 属性名与 `10px 9px 8px` padding 不变；他们的 `[data-panel-dock-frame] .loci-card-body{...}` 选择器选错了元素（画框的是 `.loci-card-root`），但 dock 拉平后不影响结果。
+
 ## 11. 禁止事项
 
 - 不给插件加任何导航项/按钮/开关。

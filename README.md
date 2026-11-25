@@ -25,6 +25,7 @@ const dispose = dock.define({
   side: 'left',          // 'left' (default) | 'right'
   minWidth: 280,         // width below which your content stops being useful (default 280)
   version: '1.2.3',      // optional; shown by CardShell next to the title
+  frame: true,          // optional; the dock draws your rectangle (see below). Default false.
   component: MyPanel,    // required, a React component
 })
 ```
@@ -34,7 +35,7 @@ existing id replaces the earlier definition. It returns a `dispose()` that unreg
 
 | call | returns |
 |---|---|
-| `dock.panels()` | `[{ id, title, order, side, minWidth, version }]` in stacking order |
+| `dock.panels()` | `[{ id, title, order, side, effective, minWidth, version, frame }]` in stacking order |
 | `dock.getSide(id)` | `'left' \| 'right'` |
 | `dock.setSide(id, side)` | the side that was stored |
 | `dock.toggleSide(id)` | the new side |
@@ -101,9 +102,14 @@ the conversation area's right edge — it never draws on that panel.
    `h('div', { ...rest, style: { ...style, /* yours */ } })`.
 2. Never position yourself: no `position: fixed`, no explicit width, no margins used to fight the
    dock. The dock owns placement.
-3. Your element is the visual rectangle. The dock adds no border, radius, padding or title bar by
-   itself — the card's own shell (border, radius, background, shadow) stays. If you want the shared
-   top bar, render `dock.CardShell` (below); it draws only the header row, never your body.
+3. Your element is the visual rectangle **unless you opt into `frame: true`**. Without a frame the
+   dock adds no border, radius, padding or title bar — the card's own shell stays. If you want the
+   shared top bar, render `dock.CardShell` (below); it draws only the header row, never your body.
+   With `frame: true` the dock draws the rectangle (background `--dsw-specific-sidebar-fill`,
+   1px `--dsw-alias-border-l1`, radius 12, padding `10px 9px 8px`) and **flattens your root**:
+   `padding/margin/border/radius/background/box-shadow` are forced to zero on it. Declare
+   `frame: true` only if you are ready to give up your own shell — that is the point: three cards
+   then cannot end up in three different greys.
 4. Give it an **intrinsic height** in both hosts. The dock supplies width, flex reset and the 6px
    stack gap, nothing more. `order` decides stacking; `height` is accepted for compatibility but has
    no layout effect.

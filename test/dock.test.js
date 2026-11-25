@@ -106,5 +106,9 @@ test('constants in client.js match this model (drift guard)', () => {
   assert.equal(num('MAX_COVER_RATIO'), MAX_COVER_RATIO);
   assert.equal(num('MAX_PANEL_WIDTH'), MAX_PANEL_WIDTH);
   assert.equal(num('DEFAULT_MIN_WIDTH'), DEFAULT_MIN_WIDTH);
-  assert.match(src, /const VERSION = '0\.6\.\d+'/);
+  assert.match(src, /const VERSION = '0\.7\.\d+'/);
+  // The deck and the frame are part of the current contract; both must still be wired.
+  assert.match(src, /const DECK_PEEK = 24/);
+  assert.match(src, /'data-panel-dock-frame'/);
+  assert.match(src, /const STICKY_PLAN_MS = 2500/);
 })
