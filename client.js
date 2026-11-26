@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.9.0'
+    const VERSION = '0.9.2'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -670,8 +670,10 @@ window.__ModuleLoader__.load({
     // higher and to the right, very slightly rotated and scaled, so the stack reads as
     // physical cards rather than tabs. Values are deliberately small -- at 3 cards the
     // whole fan is only a couple of degrees wide.
-    const DECK_STEP_Y = 12
-    const DECK_STEP_X = 4
+    // Mostly horizontal: the stack fans to the right, so a card going to the back reads as
+    // sliding sideways (WeChat's stack does), not as sliding up or down.
+    const DECK_STEP_Y = 5
+    const DECK_STEP_X = 12
     const DECK_ROT = 0.7
     const DECK_SCALE_STEP = 0.014
     const DECK_PEEK = DECK_STEP_Y
@@ -899,8 +901,10 @@ window.__ModuleLoader__.load({
         if (isLeaving) {
           // The card that just lost the front leans out to the left before dropping back.
           el.style.transition = 'transform 170ms cubic-bezier(.4,0,.2,1),opacity 170ms ease'
-          el.style.transform = 'translate(-13%, 9%) rotate(-4deg) scale(.945)'
-          el.style.opacity = '0.55'
+          // Slide out sideways, almost level with the stack -- a diagonal move read as
+          // "up/down" because the old cascade was mostly vertical.
+          el.style.transform = 'translate3d(-46%,1%,0) rotate(-4.5deg) scale(.96)'
+          el.style.opacity = '0.6'
         } else {
           const x = position * DECK_STEP_X
           const y = (n - 1 - position) * DECK_STEP_Y
@@ -924,9 +928,11 @@ window.__ModuleLoader__.load({
         else el.setAttribute('data-panel-dock-rear', '')
         const frame = el.firstElementChild
         if (frame && frame.hasAttribute && frame.hasAttribute('data-panel-dock-frame')) {
+          // The ring matters more than the shadow: the card fill (#f9fafb) is nearly the
+          // sidebar's white, so without an edge the rear cards dissolve into the column.
           frame.style.boxShadow = position === 0
-            ? '0 8px 20px 0 rgba(0,0,0,0.16)'
-            : '0 2px 8px 0 rgba(0,0,0,0.10)'
+            ? '0 0 0 1px rgba(15,23,42,0.10), 0 8px 20px 0 rgba(0,0,0,0.16)'
+            : '0 0 0 1px rgba(15,23,42,0.10), 0 2px 8px 0 rgba(0,0,0,0.12)'
         }
         if (position === 0) frontHeight = Math.round(el.getBoundingClientRect().height)
       })
@@ -1360,14 +1366,20 @@ window.__ModuleLoader__.load({
     // it stays hit-testable (click-through is self-contradictory in CSS: an element
     // that ignores the pointer can never observe hover, so it would flicker).
     const BAND_CSS = [
-      '[data-panel-dock-strip] [data-panel-dock-cell]{transition:opacity 120ms ease}',
-      '[data-panel-dock-strip] [data-panel-dock-cell]:hover{opacity:0.45}',
+      // Hover used to fade the whole card to 45%, text included. Only the surface goes
+      // translucent now: the content stays at full opacity, so the card reads as glass
+      // over the transcript instead of as a disabled control.
+      '[data-panel-dock-strip] [data-panel-dock-cell] > [data-panel-dock-frame]{',
+      'transition:background-color 140ms ease,box-shadow 140ms ease,border-color 140ms ease;}',
+      '[data-panel-dock-strip] [data-panel-dock-cell]:hover > [data-panel-dock-frame]{',
+      'background:color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 38%,transparent);',
+      'border-color:transparent;box-shadow:none;}',
       // ---- deck ----
       '[data-panel-dock-deck]{position:relative;transition:height 200ms cubic-bezier(.2,.8,.2,1)}',
       '[data-panel-dock-deck] > [data-panel-dock-cell]{position:absolute;left:0;right:0;top:0;',
       'transition:transform 200ms cubic-bezier(.2,.8,.2,1),opacity 160ms ease}',
       // Rear cards are only strips: keep them clickable but not visually loud.
-      '[data-panel-dock-deck] > [data-panel-dock-cell]:hover{opacity:1}',
+
       '[data-panel-dock-deck-bar][data-panel-dock-hidden]{display:none}',
       // Rear cards are visible but not operable: their controls (side toggle, refresh,
       // links) must not fire while the card sits behind. Clicks fall through to the card
@@ -1432,9 +1444,9 @@ window.__ModuleLoader__.load({
       'transform:rotate(45deg);opacity:0;',
       'transition:opacity 140ms ease;animation:pdDeckChevron 1.2s ease-in-out infinite}',
       '[data-panel-dock-deck-bar]:hover > i,[data-panel-dock-deck-bar]:focus-visible > i{opacity:.92}',
-      // Deck already on: the same gesture splits the stack back into rows, so point
-      // the chevrons at the rows instead of repeating "stack down".
-      '[data-panel-dock-deck-bar][data-panel-dock-deck-on] > i{transform:rotate(-45deg);margin-top:5px;margin-left:-3px}',
+      // Deck already on: the same press unfolds the stack, so the chevrons point UP.
+      // (rotate(-45deg) made them point right, which read as neither state.)
+      '[data-panel-dock-deck-bar][data-panel-dock-deck-on] > i{transform:rotate(-135deg);margin-top:5px}',
       '@media (prefers-reduced-motion: reduce){[data-panel-dock-deck-bar] > i{animation:none}}',
       '[data-panel-dock-deck-bar] > i:nth-child(2){animation-delay:.14s}',
       '[data-panel-dock-deck-bar] > i:nth-child(3){animation-delay:.28s}',
