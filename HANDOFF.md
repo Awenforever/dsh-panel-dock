@@ -1149,6 +1149,18 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 **新增事实：client.js 热更新在真实窗口里生效**。0.6.11 → 0.6.12 安装后未重启，`window.__dshPanelDock.version` 直接变成新值（`pnpm install` 替换 node_modules 后 HMR 重载模块）。所以插件改动不必每次让用户重启；「enable/disable 不能载入新 client」那条仍然成立，两者不矛盾。
 
 
+## 15. 0.8.2（2026-11-26）：悬停条改为「卡片同色磨砂」扁平样式
+
+用户反馈：那条深色渐变（`rgba(18,20,24,.72→.30)`）「太生硬、不协调」，它其实就是**牌堆开关**（用户口语称「下拉框」）。改为：
+
+- 底：`color-mix(in srgb, var(--dsw-specific-sidebar-fill) 94%, transparent)` → `62%` 的竖向渐变（**跟随卡片底色，暗色主题自动正确**）；
+- 下边线：`1px var(--dsw-alias-border-l1)`；
+- 磨砂：`backdrop-filter: blur(9px) saturate(1.06)`；
+- 箭头：`1.6px var(--dsw-alias-label-secondary)`（灰，替代原来的白色 + 投影）；
+- 悬停高度 32 → **30px**；静止仍是 10px 透明感应区 + `opacity:0`。
+
+验证方式：本机 app 今天未带 `--remote-debugging-port` 启动，且 `~/.dsh/.credentials.yaml` 读取报 **EPERM**（恢复后权限变化），一次性实例走不通，因此用**样式镜像页**（同 CSS）截图比对，非真实窗口 —— 记录在此以免后人误认为实机验证。
+
 ## 14. 0.8.x（2026-11-25）：底面归 dock 所有（用户定的不变量）
 
 **用户原话**：「我要 USTC 与 Memory 全部向 Codex 看齐，并且……以后各卡片的底色、阴影都统一，不再由各卡片自行其是。」

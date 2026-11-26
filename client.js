@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.8.1'
+    const VERSION = '0.8.2'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -1328,18 +1328,20 @@ window.__ModuleLoader__.load({
       'opacity:0;transition:height 170ms ease,opacity 140ms ease,background 170ms ease,',
       'border-color 170ms ease;-webkit-backdrop-filter:blur(0px);backdrop-filter:blur(0px);}',
       '[data-panel-dock-deck-bar]:hover,[data-panel-dock-deck-bar]:focus-visible{',
-      'height:32px;opacity:1;',
-      // Dark enough that white chevrons read on a light card, translucent enough to see
-      // the card edge through it -- measured on a light theme card: .46 over white gave
-      // a pale grey where the arrows disappeared.
-      'background:linear-gradient(180deg,rgba(18,20,24,.72),rgba(18,20,24,.30));',
-      'border-bottom-color:rgba(0,0,0,.18);',
-      '-webkit-backdrop-filter:blur(7px) saturate(1.15);backdrop-filter:blur(7px) saturate(1.15);}',
-      '[data-panel-dock-deck-bar] > i{display:block;width:7px;height:7px;margin-top:-6px;',
-      'border-right:1.8px solid #fff;border-bottom:1.8px solid #fff;transform:rotate(45deg);',
-      'opacity:0;filter:drop-shadow(0 1px 1px rgba(0,0,0,.45));',
+      'height:30px;opacity:1;',
+      // Frosted in the card's own colour, not a black band: the dark version read as a
+      // heavy overlay dropped on the card. color-mix keeps it right in dark themes too.
+      'background:linear-gradient(180deg,',
+      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 94%,transparent),',
+      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 62%,transparent));',
+      'border-bottom-color:var(--dsw-alias-border-l1,rgba(15,23,42,.08));',
+      '-webkit-backdrop-filter:blur(9px) saturate(1.06);backdrop-filter:blur(9px) saturate(1.06);}',
+      '[data-panel-dock-deck-bar] > i{display:block;width:6px;height:6px;margin-top:-5px;',
+      'border-right:1.6px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.55));',
+      'border-bottom:1.6px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.55));',
+      'transform:rotate(45deg);opacity:0;',
       'transition:opacity 140ms ease;animation:pdDeckChevron 1.2s ease-in-out infinite}',
-      '[data-panel-dock-deck-bar]:hover > i,[data-panel-dock-deck-bar]:focus-visible > i{opacity:.92}',
+      '[data-panel-dock-deck-bar]:hover > i,[data-panel-dock-deck-bar]:focus-visible > i{opacity:.75}',
       // Deck already on: the same gesture splits the stack back into rows, so point
       // the chevrons at the rows instead of repeating "stack down".
       '[data-panel-dock-deck-bar][data-panel-dock-deck-on] > i{transform:rotate(-45deg);margin-top:5px;margin-left:-3px}',
