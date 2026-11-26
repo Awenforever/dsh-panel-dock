@@ -1173,6 +1173,8 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 - 模糊 `9px → 14px`、`saturate(1.25)`；`inset 0 1px 0 rgba(255,255,255,.55)` 做顶部反光；
 - 底边线保留 `rgba(15,23,42,.09)`。
 
+**0.8.6（中间更好触发）**：条本体仍是 30px，加一条**只在中间**（左右各留 25%）向下 16px 的**透明**命中区 `[data-panel-dock-deck-bar]::after`；两端命中范围不变。命中测试（3× 镜像页 elementFromPoint）：深度 10px 时整条都命中；深度 34px / 44px 时**只有中间命中**、左右命中卡片。视觉零变化（无背景）。
+
 **安装踩坑（重要）**：`pnpm install` 整棵树失败，因为 `dsh-codex-advisor` 依赖 `https://github.com/.../v0.11.9.tar.gz`（网络不可达时 ECONNRESET，跟本包无关）。绕行：备份 `node_modules/dsh-panel-dock` → `tar -xzf vendor/<ver>.tgz` 覆盖 → 校验 `package.json.version` 与 `client.js` 的 `VERSION`。备份目录 `node_modules/.bak-dsh-panel-dock-0.8.4`。
 
 ## 14. 0.8.x（2026-11-25）：底面归 dock 所有（用户定的不变量）

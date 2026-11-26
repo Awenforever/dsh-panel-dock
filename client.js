@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.8.5'
+    const VERSION = '0.8.6'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -1306,6 +1306,11 @@ window.__ModuleLoader__.load({
       // Rear cards are only strips: keep them clickable but not visually loud.
       '[data-panel-dock-deck] > [data-panel-dock-cell]:hover{opacity:1}',
       '[data-panel-dock-deck-bar][data-panel-dock-hidden]{display:none}',
+      // The strip is easy to miss at 10px when the pointer approaches from the middle of
+      // the card, so a transparent tab hangs below the centre (ends untouched, nothing
+      // painted): the middle catches the pointer 16px lower, the sides behave as before.
+      '[data-panel-dock-deck-bar]::after{content:"";position:absolute;left:25%;right:25%;',
+      'top:100%;height:16px;border-radius:0 0 10px 10px;}',
       // frame:true means the dock owns the rectangle, so the card body must not paint a
       // second one. Cards get this for free -- a card that keeps its own border shows a
       // box inside a box (seen live: loci drew 12px radius + white fill inside the frame).
