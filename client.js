@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.8.2'
+    const VERSION = '0.8.3'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -1320,10 +1320,13 @@ window.__ModuleLoader__.load({
       // arrives -- a permanently visible bar read as "the column got taller".
       // pointer-events:auto is essential: the band is pointer-events:none, and a child
       // inherits that, so the strip was unclickable (reported as "click does nothing").
-      '[data-panel-dock-deck-bar]{position:absolute;left:-4px;right:-4px;top:0;height:10px;',
+      // Exactly the card's width: the strip used to stick out 4px on each side, which read
+      // as a floating bar rather than a drawer pulled out of the card. Top corners follow
+      // the card radius (12) so the square edge does not poke out of the rounded corner.
+      '[data-panel-dock-deck-bar]{position:absolute;left:0;right:0;top:0;height:10px;',
       'z-index:400;box-sizing:border-box;pointer-events:auto;cursor:pointer;',
       'display:flex;align-items:center;justify-content:center;gap:3px;',
-      'border-radius:0 0 10px 10px;border-bottom:1px solid transparent;',
+      'border-radius:12px 12px 10px 10px;border-bottom:1px solid transparent;',
       'background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,0));',
       'opacity:0;transition:height 170ms ease,opacity 140ms ease,background 170ms ease,',
       'border-color 170ms ease;-webkit-backdrop-filter:blur(0px);backdrop-filter:blur(0px);}',
@@ -1331,17 +1334,22 @@ window.__ModuleLoader__.load({
       'height:30px;opacity:1;',
       // Frosted in the card's own colour, not a black band: the dark version read as a
       // heavy overlay dropped on the card. color-mix keeps it right in dark themes too.
-      'background:linear-gradient(180deg,',
-      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 94%,transparent),',
-      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 62%,transparent));',
-      'border-bottom-color:var(--dsw-alias-border-l1,rgba(15,23,42,.08));',
+      // A whisper of grey sits on top of the frosted tone -- without it the strip was so
+      // faint against the card that nobody could tell it was clickable.
+      'background:',
+      'linear-gradient(180deg,rgba(15,23,42,.055),rgba(15,23,42,0)),',
+      'linear-gradient(180deg,',
+      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 96%,transparent),',
+      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 70%,transparent));',
+      'border-bottom-color:rgba(15,23,42,.10);',
+      'box-shadow:inset 0 -1px 0 rgba(15,23,42,.05);',
       '-webkit-backdrop-filter:blur(9px) saturate(1.06);backdrop-filter:blur(9px) saturate(1.06);}',
-      '[data-panel-dock-deck-bar] > i{display:block;width:6px;height:6px;margin-top:-5px;',
-      'border-right:1.6px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.55));',
-      'border-bottom:1.6px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.55));',
+      '[data-panel-dock-deck-bar] > i{display:block;width:7px;height:7px;margin-top:-6px;',
+      'border-right:1.8px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.62));',
+      'border-bottom:1.8px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.62));',
       'transform:rotate(45deg);opacity:0;',
       'transition:opacity 140ms ease;animation:pdDeckChevron 1.2s ease-in-out infinite}',
-      '[data-panel-dock-deck-bar]:hover > i,[data-panel-dock-deck-bar]:focus-visible > i{opacity:.75}',
+      '[data-panel-dock-deck-bar]:hover > i,[data-panel-dock-deck-bar]:focus-visible > i{opacity:.92}',
       // Deck already on: the same gesture splits the stack back into rows, so point
       // the chevrons at the rows instead of repeating "stack down".
       '[data-panel-dock-deck-bar][data-panel-dock-deck-on] > i{transform:rotate(-45deg);margin-top:5px;margin-left:-3px}',
