@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.8.4'
+    const VERSION = '0.8.5'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -1334,18 +1334,18 @@ window.__ModuleLoader__.load({
       'border-color 170ms ease;-webkit-backdrop-filter:blur(0px);backdrop-filter:blur(0px);}',
       '[data-panel-dock-deck-bar]:hover,[data-panel-dock-deck-bar]:focus-visible{',
       'height:30px;opacity:1;',
-      // Frosted in the card's own colour, not a black band: the dark version read as a
-      // heavy overlay dropped on the card. color-mix keeps it right in dark themes too.
-      // A whisper of grey sits on top of the frosted tone -- without it the strip was so
-      // faint against the card that nobody could tell it was clickable.
+      // Real frosted glass needs a *translucent* veil: at 96% the fill hid everything
+      // behind it, so backdrop-filter had nothing to blur and the strip read as opaque.
+      // Keep the veil low-opacity, blur hard, and let a white top highlight carry the
+      // glass edge; the darker tone is now only the bottom hairline.
       'background:',
-      'linear-gradient(180deg,rgba(15,23,42,.055),rgba(15,23,42,0)),',
+      'linear-gradient(180deg,rgba(255,255,255,.26),rgba(255,255,255,.06)),',
       'linear-gradient(180deg,',
-      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 96%,transparent),',
-      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 70%,transparent));',
-      'border-bottom-color:rgba(15,23,42,.10);',
-      'box-shadow:inset 0 -1px 0 rgba(15,23,42,.05);',
-      '-webkit-backdrop-filter:blur(9px) saturate(1.06);backdrop-filter:blur(9px) saturate(1.06);}',
+      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 52%,transparent),',
+      'color-mix(in srgb,var(--dsw-specific-sidebar-fill,#f9fafb) 28%,transparent));',
+      'border-bottom-color:rgba(15,23,42,.09);',
+      'box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -1px 0 rgba(15,23,42,.04);',
+      '-webkit-backdrop-filter:blur(14px) saturate(1.25);backdrop-filter:blur(14px) saturate(1.25);}',
       '[data-panel-dock-deck-bar] > i{display:block;width:7px;height:7px;margin-top:-6px;',
       'border-right:1.8px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.62));',
       'border-bottom:1.8px solid var(--dsw-alias-label-secondary,rgba(15,23,42,.62));',

@@ -1167,6 +1167,14 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 
 **0.8.4**：条的形状改为「上圆下方」—— `border-radius: 12px 12px 0 0`（顶角与卡片一致，底边直角 + 发丝线），读作「从卡片里拉出来的抽屉面板」，而不是一枚浮起的药丸。
 
+**0.8.5（毛玻璃回归）**：0.8.3 为提对比把填充加到 `96%`，等于不透明，`backdrop-filter` 无事可做，用户反馈「变 opaque 了」。改法：
+- 填充降到 `color-mix(--fill 52% → 28%)`（真半透明，后面内容成为雾状）；
+- 叠一层白色高光 `rgba(255,255,255,.26→.06)` 表现玻璃边；
+- 模糊 `9px → 14px`、`saturate(1.25)`；`inset 0 1px 0 rgba(255,255,255,.55)` 做顶部反光；
+- 底边线保留 `rgba(15,23,42,.09)`。
+
+**安装踩坑（重要）**：`pnpm install` 整棵树失败，因为 `dsh-codex-advisor` 依赖 `https://github.com/.../v0.11.9.tar.gz`（网络不可达时 ECONNRESET，跟本包无关）。绕行：备份 `node_modules/dsh-panel-dock` → `tar -xzf vendor/<ver>.tgz` 覆盖 → 校验 `package.json.version` 与 `client.js` 的 `VERSION`。备份目录 `node_modules/.bak-dsh-panel-dock-0.8.4`。
+
 ## 14. 0.8.x（2026-11-25）：底面归 dock 所有（用户定的不变量）
 
 **用户原话**：「我要 USTC 与 Memory 全部向 Codex 看齐，并且……以后各卡片的底色、阴影都统一，不再由各卡片自行其是。」
