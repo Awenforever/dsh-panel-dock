@@ -1173,6 +1173,15 @@ CPU 采样（running 态 10 秒，10469ms）：`(program)` 8307ms = **79.3%**（
 - 模糊 `9px → 14px`、`saturate(1.25)`；`inset 0 1px 0 rgba(255,255,255,.55)` 做顶部反光；
 - 底边线保留 `rgba(15,23,42,.09)`。
 
+**0.9.0（微信式叠卡 + 两个 bug）**：
+
+调研来源：微信设计团队《制作流畅界面》（wxad.design，讲 WWDC18 的 fluid interfaces：实时连续反馈、弹簧、可打断）+ 微信专利 CN119311351A（「卡片集」堆叠态↔展开态、拖拽删除）。**不需要逆向微信本体**（用户开的 REA 可关）。用户明确：截图里的 "Expand 5" 不学。
+
+- 视觉改为级联：每深一层 **上移 12px、右移 4px、旋转 0.7°、缩小 1.4%**，`transform-origin: 50% 0%`；前卡阴影 `0 8px 20px .16`，后卡 `0 2px 8px .10`（写在 frame 上，退出堆叠时清空）。参考微信堆叠态，但保留我们自己的 24→18px 可点细条。
+- 换卡动效：被换下的前卡先 **向左下倾倒**（`translate(-13%,9%) rotate(-4deg) scale(.945)` + 透明度 .55，170ms），随后落到队尾；其余卡用 `cubic-bezier(.2,.9,.25,1)` 240ms 前移。
+- **bug 1 修复**：堆叠时只有前卡可交互；后排卡片通过 `[data-panel-dock-rear]` + CSS 关掉全部 `button/a/input/select/textarea/[role=button]/[tabindex]` 的 `pointer-events`（不是 `inert`，因为 `inert` 会让点击穿透到正文、我们的提升处理器就收不到了）。命中测试：前卡按钮 → `tog0`；后排两个按钮 → `frame`（即卡片本体，点击=提升该卡），细条 → `frame`。
+- **bug 2 修复**：换前台后加 `requestAnimationFrame` + 260ms 各一次 `refreshDeckHeight`，因为新前卡的高度是在去 `clip-path`、缩放回 1 之前/当帧测的，容器偏矮会把高卡裁一截，等 ResizeObserver 才发现（用户看到「过一会儿才反应过来」）。
+
 **0.8.6（中间更好触发）**：条本体仍是 30px，加一条**只在中间**（左右各留 25%）向下 16px 的**透明**命中区 `[data-panel-dock-deck-bar]::after`；两端命中范围不变。命中测试（3× 镜像页 elementFromPoint）：深度 10px 时整条都命中；深度 34px / 44px 时**只有中间命中**、左右命中卡片。视觉零变化（无背景）。
 
 **安装踩坑（重要）**：`pnpm install` 整棵树失败，因为 `dsh-codex-advisor` 依赖 `https://github.com/.../v0.11.9.tar.gz`（网络不可达时 ECONNRESET，跟本包无关）。绕行：备份 `node_modules/dsh-panel-dock` → `tar -xzf vendor/<ver>.tgz` 覆盖 → 校验 `package.json.version` 与 `client.js` 的 `VERSION`。备份目录 `node_modules/.bak-dsh-panel-dock-0.8.4`。

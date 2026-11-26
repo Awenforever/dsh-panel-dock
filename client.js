@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.8.6'
+    const VERSION = '0.9.0'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -666,9 +666,17 @@ window.__ModuleLoader__.load({
     // ---- deck: same-side cards as a stack (one full card + 24px peek strips) ----
     // Column behaviour up to 0.6.13 is a plain list. A deck trades height for order:
     // every rear card shows only its top strip and the wheel shuffles the front one.
-    const DECK_PEEK = 24
+    // WeChat's stacked card set (公众号/收藏 的「堆叠态」): each card behind sits a little
+    // higher and to the right, very slightly rotated and scaled, so the stack reads as
+    // physical cards rather than tabs. Values are deliberately small -- at 3 cards the
+    // whole fan is only a couple of degrees wide.
+    const DECK_STEP_Y = 12
+    const DECK_STEP_X = 4
+    const DECK_ROT = 0.7
+    const DECK_SCALE_STEP = 0.014
+    const DECK_PEEK = DECK_STEP_Y
     const DECK_KEY = 'dsh.panel-dock.deck'
-    const deck = { on: null, front: { band: null, left: null }, order: { band: null, left: null }, resync: null, wheelAt: 0 }
+    const deck = { on: null, front: { band: null, left: null }, order: { band: null, left: null }, resync: null, wheelAt: 0, leaving: { band: null, left: null } }
 
     function deckOn() {
       if (deck.on === null) {
@@ -741,8 +749,17 @@ window.__ModuleLoader__.load({
       const at = order.indexOf(deck.front[key])
       const from = at < 0 ? 0 : at
       const next = (from + step + order.length) % order.length
+      // The card being replaced first leans out to the left and dims (the "turning over"
+      // beat), then drops to the back of the stack; everything else moves up one slot.
+      deck.leaving[key] = { id: order[from], until: Date.now() + 170 }
       deck.front[key] = order[next]
       if (deck.resync) deck.resync()
+      window.setTimeout(() => {
+        if (deck.leaving[key] && Date.now() >= deck.leaving[key].until) {
+          deck.leaving[key] = null
+          if (deck.resync) deck.resync()
+        }
+      }, 180)
     }
 
     function wireDeckInput(container) {
@@ -766,9 +783,15 @@ window.__ModuleLoader__.load({
         const key = deckKeyOf(container)
         const order = deck.order[key]
         if (!order || order.length < 2) return
+        // Anything interactive keeps its own behaviour: only the front card is live (the
+        // rest are inert), so a side-toggle press must never be swallowed here.
+        const hit = event.target && event.target.closest
+          ? event.target.closest('button,a,input,select,textarea,[role="button"],[data-panel-dock-toggle]')
+          : null
+        if (hit) return
         const box = container.getBoundingClientRect()
         const y = event.clientY - box.top
-        const slot = Math.floor(y / DECK_PEEK)
+        const slot = Math.floor(y / DECK_STEP_Y)
         if (slot < 0 || slot >= order.length - 1) return
         const target = order[order.length - 1 - slot]
         event.preventDefault()
@@ -842,6 +865,12 @@ window.__ModuleLoader__.load({
           el.style.transform = ''
           el.style.zIndex = ''
           el.style.clipPath = ''
+          el.style.opacity = ''
+          el.style.transition = ''
+          el.style.transformOrigin = ''
+          el.removeAttribute('data-panel-dock-rear')
+          const frame = el.firstElementChild
+          if (frame && frame.hasAttribute && frame.hasAttribute('data-panel-dock-frame')) frame.style.boxShadow = ''
         }
         return
       }
@@ -854,6 +883,9 @@ window.__ModuleLoader__.load({
       const order = ids.slice(start).concat(ids.slice(0, start))
       deck.order[key] = order
       let frontHeight = 0
+      const leaving = deck.leaving[key]
+      const leavingLive = Boolean(leaving && leaving.id && Date.now() < leaving.until)
+      const n = order.length
       order.forEach((id, position) => {
         const el = tray.cells.get(id)
         if (!el) return
@@ -861,17 +893,44 @@ window.__ModuleLoader__.load({
         el.style.left = '0'
         el.style.right = '0'
         el.style.top = '0'
+        el.style.transformOrigin = '50% 0%'
         el.style.zIndex = String(200 - position)
-        el.style.transform = 'translateY(' + ((order.length - 1 - position) * DECK_PEEK) + 'px)'
+        const isLeaving = leavingLive && leaving.id === id && position !== 0
+        if (isLeaving) {
+          // The card that just lost the front leans out to the left before dropping back.
+          el.style.transition = 'transform 170ms cubic-bezier(.4,0,.2,1),opacity 170ms ease'
+          el.style.transform = 'translate(-13%, 9%) rotate(-4deg) scale(.945)'
+          el.style.opacity = '0.55'
+        } else {
+          const x = position * DECK_STEP_X
+          const y = (n - 1 - position) * DECK_STEP_Y
+          const rot = position * DECK_ROT
+          const scale = 1 - position * DECK_SCALE_STEP
+          el.style.transition = 'transform 240ms cubic-bezier(.2,.9,.25,1),opacity 160ms ease'
+          el.style.transform =
+            'translate3d(' + x + 'px,' + y + 'px,0) rotate(' + rot + 'deg) scale(' + scale + ')'
+          el.style.opacity = '1'
+        }
         // A rear card is only its strip: without clipping, a tall rear card would show
         // its bottom edge below a shorter front card (measured: 222px rear under a 170px
         // front in a 218px column).
         el.style.clipPath = position === 0
           ? ''
-          : 'inset(0px 0px calc(100% - ' + DECK_PEEK + 'px) 0px)'
+          : 'inset(0px 0px calc(100% - ' + (DECK_STEP_Y + 6) + 'px) 0px)'
+        // Only the front card is live. The rear cards keep hit-testing (a press on a
+        // strip promotes that card) but every control inside them is disabled by CSS,
+        // so the side-toggle of a card behind cannot switch sides any more.
+        if (position === 0) el.removeAttribute('data-panel-dock-rear')
+        else el.setAttribute('data-panel-dock-rear', '')
+        const frame = el.firstElementChild
+        if (frame && frame.hasAttribute && frame.hasAttribute('data-panel-dock-frame')) {
+          frame.style.boxShadow = position === 0
+            ? '0 8px 20px 0 rgba(0,0,0,0.16)'
+            : '0 2px 8px 0 rgba(0,0,0,0.10)'
+        }
         if (position === 0) frontHeight = Math.round(el.getBoundingClientRect().height)
       })
-      const total = frontHeight + (order.length - 1) * DECK_PEEK
+      const total = frontHeight + (n - 1) * DECK_STEP_Y
       deck.frontHeights = deck.frontHeights || {}
       deck.frontHeights[key] = frontHeight
       const box = container.getBoundingClientRect()
@@ -885,6 +944,10 @@ window.__ModuleLoader__.load({
       // The sidebar stack is a flex child sized to 100%; with an explicit height it has
       // to opt out or the host's basis wins.
       container.style.flex = container.hasAttribute('data-panel-dock-left') ? '0 0 auto' : ''
+      // The new front card is measured before its un-clipped paint settles; without these
+      // two follow-ups a tall card stayed visually cut until an unrelated resize.
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => refreshDeckHeight(container))
+      window.setTimeout(() => refreshDeckHeight(container), 260)
     }
 
     function leftStackNode() {
@@ -1306,6 +1369,18 @@ window.__ModuleLoader__.load({
       // Rear cards are only strips: keep them clickable but not visually loud.
       '[data-panel-dock-deck] > [data-panel-dock-cell]:hover{opacity:1}',
       '[data-panel-dock-deck-bar][data-panel-dock-hidden]{display:none}',
+      // Rear cards are visible but not operable: their controls (side toggle, refresh,
+      // links) must not fire while the card sits behind. Clicks fall through to the card
+      // body, which promotes that card to the front.
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] button,',
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] a,',
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] input,',
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] select,',
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] textarea,',
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] summary,',
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] [role="button"],',
+      '[data-panel-dock-deck] > [data-panel-dock-cell][data-panel-dock-rear] [tabindex]{',
+      'pointer-events:none;}',
       // The strip is easy to miss at 10px when the pointer approaches from the middle of
       // the card, so a transparent tab hangs below the centre (ends untouched, nothing
       // painted): the middle catches the pointer 16px lower, the sides behave as before.
