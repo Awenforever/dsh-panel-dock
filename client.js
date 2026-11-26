@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     // register a card here and the dock decides where it renders. It never adds a
     // navigation entry, a button or a dialog -- the only affordances belong to the
     // cards themselves.
-    const VERSION = '0.8.3'
+    const VERSION = '0.8.4'
     const NS = 'panel-dock'
     const STORE_KEY = 'dsh.panel-dock.v1'
     const GAP = 6
@@ -1326,7 +1326,9 @@ window.__ModuleLoader__.load({
       '[data-panel-dock-deck-bar]{position:absolute;left:0;right:0;top:0;height:10px;',
       'z-index:400;box-sizing:border-box;pointer-events:auto;cursor:pointer;',
       'display:flex;align-items:center;justify-content:center;gap:3px;',
-      'border-radius:12px 12px 10px 10px;border-bottom:1px solid transparent;',
+      // Top corners follow the card (12px); the bottom edge is square on purpose --
+      // it reads as a drawer face pulled out of the card, not a floating pill.
+      'border-radius:12px 12px 0 0;border-bottom:1px solid transparent;',
       'background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,0));',
       'opacity:0;transition:height 170ms ease,opacity 140ms ease,background 170ms ease,',
       'border-color 170ms ease;-webkit-backdrop-filter:blur(0px);backdrop-filter:blur(0px);}',
